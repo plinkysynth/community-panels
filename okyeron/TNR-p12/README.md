@@ -1,7 +1,6 @@
 # TNR-p12: a step sequencer for Plinky12 with 8 layers, inspired by the Yamaha Tenori-On.
 
-Based in part on js code by Chris Pirillo "Tenori-Online: Interactive Web-Based Music Sequencer" https://pirillo.com/arcade/tenori-on.html Github: https://github.com/ChrisPirillo/tenori-on (code is posted with no license)
-
+Inspired in part by Chris Pirillo's "Tenori-Online: Interactive Web-Based Music Sequencer" https://pirillo.com/arcade/tenori-on.html Github: https://github.com/ChrisPirillo/tenori-on (code is posted with no license)
 
 
 # Documentation

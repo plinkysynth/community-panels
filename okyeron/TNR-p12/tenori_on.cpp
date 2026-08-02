@@ -1,7 +1,13 @@
 /*
+@Name: TNR-p12
+@Author: okyeron
+@Tags: sequencer, groovebox, midi
+@Preferred Panels: all
+@Description: An 8-layer 16-step grid sequencer with Score, Random, and Bounce modes, inspired by the Yamaha Tenori-On.
+
 Tenori-On: a 16x15 step sequencer with 8 layers, inspired by the Yamaha Tenori-On.
 
-Based in part on js code by Chris Pirillo "Tenori-Online: Interactive Web-Based Music Sequencer"
+Inital inspiration based on js code by Chris Pirillo "Tenori-Online: Interactive Web-Based Music Sequencer"
 https://pirillo.com/arcade/tenori-on.html
 
 
@@ -78,9 +84,19 @@ struct tenori_on : panel_t {
     bool    voice_retrigger[MAX_VOICES_USED]; // true on the first on_sequence call for a new note
     bool    layer_muted[NUM_LAYERS];          // true = that layer's notes are silenced
     uint8_t note_velocity[NUM_LAYERS][15][16]; // 0-127 per pad, set by touch pressure
-    // Velocity curve: p*(256-p)/64, capped at 127.
-    // Concave-down (sub-linear): light press (~20) -> ~74, medium (~30) -> ~105, firm (~50+) -> 127.
     int     voice_vel[MAX_VOICES_USED];       // velocity carried from assignment to play_synth
+
+    // Touch pressure -> MIDI velocity.
+    //
+    // Uses the framework's touch_pressure_curve_q7() so pad response matches the
+    // system Sens page bargraph and the user's calibrated sensitivity.
+    //
+    // The previous hand-rolled curve p*(256-p)/64 was non-monotonic: raw pressure
+    // can reach 255 (not just 127), and that formula collapsed above ~p=200
+    // (p=255 -> velocity 3), so the hardest presses produced near-silent notes.
+    static int pressure_to_velocity(int pressure) {
+        return clampi(touch_pressure_curve_q7(pressure), 1, 127);
+    }
 
     // Layer playback modes
     static constexpr int MODE_SCORE  = 0;
@@ -136,45 +152,60 @@ struct tenori_on : panel_t {
 
     int get_num_pages() override { return 3; }
 
-    void setup_default_panel_state() override {
-        panel_t::setup_default_panel_state();
-        memset(grid, 0, sizeof(grid));
-        active_layer = 0;
+    // Everything NOT covered by on_serialise(): playheads, clock divider, voices,
+    // held gates, balls, transient UI. Seeded at startup and reset again after a
+    // panel load, where none of it carries over meaningfully from the old song.
+    void reset_runtime_state() {
         clock_div = {};
         for (int i = 0; i < NUM_LAYERS; i++) {
-            loop_start[i]             = 0;
-            loop_end[i]               = 15;
             layer_playhead[i]         = {};
-            layer_playhead[i].from    = 0;
-            layer_playhead[i].to      = 15;
+            layer_playhead[i].from    = loop_start[i];
+            layer_playhead[i].to      = loop_end[i];
             layer_playhead[i].looping = true;
-            layer_col[i]              = 0;
+            layer_playhead[i].reset(-1, loop_start[i]);
+            layer_col[i]              = loop_start[i];
+            random_fired_row[i]       = -1;
+            random_fired_col[i]       = -1;
+            layer_anim_frames[i]      = 0;
+            layer_anim_col[i]         = 255;
+            for (int c = 0; c < 16; c++) {
+                bounce_pos[i][c] = -1;
+                bounce_dir[i][c] =  1;
+            }
         }
         memset(voice_note,      -1,    sizeof(voice_note));
         memset(voice_layer,      0,    sizeof(voice_layer));
         memset(voice_retrigger, false, sizeof(voice_retrigger));
         memset(layer_muted,     false, sizeof(layer_muted));
-        memset(note_velocity, 100, sizeof(note_velocity));
         for (int i = 0; i < MAX_VOICES_USED; i++) voice_vel[i] = 100;
-        memset(layer_mode,       0,    sizeof(layer_mode));
-        for (int i = 0; i < NUM_LAYERS; i++) random_fired_row[i] = -1;
-        for (int i = 0; i < NUM_LAYERS; i++) random_fired_col[i] = -1;
         rng_state        = 1;
         was_playing      = false;
         play_held_layer  = -1;
         for (int y = 0; y < 15; y++)
             for (int x = 0; x < 16; x++)
                 play_held[y][x] = 0;
-        for (int i = 0; i < NUM_LAYERS; i++) {
-            layer_anim_type[i]   = ANIM_SIMPLE;
-            layer_anim_frames[i] = 0;
-            layer_anim_col[i]    = 255;
-            for (int c = 0; c < 16; c++) {
-                bounce_pos[i][c] = -1;
-                bounce_dir[i][c] =  1;
-            }
-        }
         synth_preset_pick_mode = false;
+    }
+
+    void setup_default_panel_state() override {
+        panel_t::setup_default_panel_state();
+        memset(grid, 0, sizeof(grid));
+        active_layer = 0;
+        for (int i = 0; i < NUM_LAYERS; i++) {
+            loop_start[i]      = 0;
+            loop_end[i]        = 15;
+            layer_anim_type[i] = ANIM_SIMPLE;
+        }
+        memset(layer_mode,    0,   sizeof(layer_mode));
+        memset(note_velocity, 100, sizeof(note_velocity));
+        reset_runtime_state();
+    }
+
+    // A staged panel load restores serialised song state only. Without this the
+    // outgoing song's playheads, sounding voices, bounce balls and held Play-mode
+    // pads survive into the newly loaded song.
+    void on_load_finished(void) override {
+        reset_runtime_state();
     }
 
     // -----------------------------------------------------------------------
@@ -225,8 +256,7 @@ struct tenori_on : panel_t {
                 for (int x = 0; x < 16 && play_next_voice < MAX_VOICES_USED; x++) {
                     int p = play_held[row][x];
                     if (p <= 0) continue;
-                    int vel = p * (256 - p) / 64;
-                    if (vel > 127) vel = 127;
+                    int vel = pressure_to_velocity(p);
                     int note = row_to_note(row);
                     bool retrig = (voice_note[play_next_voice] != note);
                     voice_note[play_next_voice]      = note;
@@ -384,9 +414,11 @@ struct tenori_on : panel_t {
             for (int i = 0; i < NUM_LAYERS; i++)
                 for (int c = 0; c < 16; c++) bounce_pos[i][c] = -1;
             if (was_playing) {
+                // reset() rather than writing .position: it also clears the
+                // playhead's runtime latch state without eating the next edge.
                 for (int i = 0; i < NUM_LAYERS; i++) {
-                    layer_playhead[i].position = loop_start[i];
-                    layer_col[i]               = loop_start[i];
+                    layer_playhead[i].reset(-1, loop_start[i]);
+                    layer_col[i] = loop_start[i];
                 }
             }
         }
@@ -442,8 +474,7 @@ struct tenori_on : panel_t {
                     if (p > best) best = p;
                 }
                 if (best > 0) {
-                    int vel = best * (256 - best) / 64;
-                    if (vel > 127) vel = 127;
+                    int vel = pressure_to_velocity(best);
                     declare_midi_note(play_layer_seq, row_to_note(row), vel);
                 }
             }
@@ -593,10 +624,8 @@ struct tenori_on : panel_t {
                     }
                     if (is_entry) {
                         int p = get_touch_pressure_xy(x, y);
-                        if (p > 0) {
-                            int scaled = p * (256 - p) / 64;
-                            note_velocity[active_layer][y][x] = scaled > 127 ? 127 : scaled;
-                        }
+                        if (p > 0)
+                            note_velocity[active_layer][y][x] = pressure_to_velocity(p);
                     }
                 }
             }
@@ -624,10 +653,8 @@ struct tenori_on : panel_t {
                     }
                     if (active) {
                         int p = get_touch_pressure_xy(x, y);
-                        if (p > 0) {
-                            int scaled = p * (256 - p) / 64;
-                            note_velocity[active_layer][y][x] = scaled > 127 ? 127 : scaled;
-                        }
+                        if (p > 0)
+                            note_velocity[active_layer][y][x] = pressure_to_velocity(p);
                     }
                 }
             }
