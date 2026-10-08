@@ -228,8 +228,8 @@ struct pendulum : panel_t {
   // ---- sequence thread -------------------------------------------------------------------------------------------
   void end_gate(int row) {
     lane_t &L = lane[row];
-    if (L.gate_voice >= 0) synth_note_up(L.gate_voice);
-    voice_allocator.voice_allocate(VOICE_SOURCE_BASE + row, 0, 0, DEFAULT_VOICE_ALLOCATOR_VOICES);
+    int voice = voice_allocator.voice_deallocate(VOICE_SOURCE_BASE + row, 0, DEFAULT_VOICE_ALLOCATOR_VOICES);
+    if (voice >= 0) synth_note_up(voice);
     L.gate_voice = -1;
     L.gate_on = false;
   }
