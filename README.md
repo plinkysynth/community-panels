@@ -56,6 +56,7 @@ author_slug/
     my_panel.cpp
     README.md        # optional, but recommended
     artwork.png      # optional; artwork.webp is also accepted
+    manual.pdf       # optional PDF manual, up to 5 MiB
 ```
 
 Each author directory can contain one optional `README.md` and one or more panel
@@ -72,7 +73,13 @@ Inside each author directory:
 Inside each panel directory, the only other accepted files are:
 
 - `README.md`: optional panel-specific notes.
-- `artwork.png` or `artwork.webp`: optional square thumbnail artwork.
+- `artwork.png` or `artwork.webp`: optional square thumbnail artwork. We recommend
+  1024×1024 pixels; the publishing build downsizes larger images to that maximum,
+  preserving your original in this repository. Smaller images are not enlarged.
+- `manual.pdf`: optional PDF manual, up to 5 MiB. It is hosted on the Plinky
+  website and linked as **PDF manual** on the panel detail page and in the IDE
+  library. You can also link to it from your panel README using
+  `[PDF manual](manual.pdf)`. Use a static document without scripts or attachments.
 
 The community panel ID comes from the author and panel directory names:
 `author_slug/panel_slug`. Directory slugs must be lowercase and contain only
@@ -179,5 +186,5 @@ local `.h` files; the Plinky 12 web IDE does not support includes in custom
 panel source.
 
 Do not include generated firmware binaries, build directories, or large media
-assets in a panel submission. Artwork should be reasonably small and suitable
+assets other than the optional PDF manual in a panel submission. Artwork should be reasonably small and suitable
 for display as a square library thumbnail.
