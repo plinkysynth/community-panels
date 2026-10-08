@@ -3,8 +3,8 @@
 @Author: PERPLEX ON
 @Firmware: beta
 @Tags: sequencer, physics, pendulum, pressure, midi
-@Preferred Panels: Blocks
-@Description: Swipe a row to launch a damped pendulum.
+@Preferred Panels: blocks
+@Description: Pendulum music box. Swipe a row to launch a damped pendulum.
 
 Each of the 16 rows is a pendulum lane. Row height = pitch (scale degrees, top row = highest).
 Swipe speed sets the swing rate (quantised to the main clock), swipe direction sets the launch wall,
@@ -27,7 +27,9 @@ struct pendulum : panel_t {
   static constexpr int ATTACH_MAX_DX = 4;    // a new press within this many pads / +-1 row continues a gesture
   static constexpr int REST_ENERGY = 20;
   static constexpr int SYNTH_PRESET_IDX = 0;
-  static constexpr uint8_t VOICE_PRIO = 16;
+  static constexpr uint8_t VOICE_PRIO = 16;    // base priority; newer lanes rank above older ones
+  static constexpr int BUSY_ENV = 1500;        // env level (0..65535) above which a voice counts as audible
+  static constexpr int VOICE_POOL = MAX_VOICES; // use every physical voice
   static constexpr uint32_t VOICE_SOURCE_BASE = 0x464c0000u;
   static constexpr uint32_t REST_FADE_US = 700000u;
   static constexpr uint32_t FLASH_US = 240000u;
@@ -71,6 +73,7 @@ struct pendulum : panel_t {
     uint8_t gate_note;
     uint8_t gate_vel;
     uint32_t gate_off_us;
+    uint32_t launch_seq; // order of launch: higher = newer
   };
 
   struct swipe_ev_t {
@@ -104,6 +107,7 @@ struct pendulum : panel_t {
   int8_t last_tap_row = 0;
   clock_divider_t div;
   voice_allocator_t voice_allocator;
+  uint32_t launch_counter;
   preset_pages_t preset_pages;
   panel_page_t panel_page;
   int8_t oct = 0;    // -2..+2 octaves relative to C3
@@ -146,7 +150,7 @@ struct pendulum : panel_t {
     return s > 65535u ? 65535u : (uint32_t)s;
   }
 
-  // Row colours: saturated for readability on the LEDs, hue amber -> red -> magenta -> violet -> blue -> cyan.
+  // OKLCH-derived at the sRGB gamut cusp (max saturation for readability), hue amber -> red -> magenta -> violet -> blue -> cyan.
   // 'pale' = same hue, lighter tint, used for the right (fifth) wall.
   static uint32_t row_col(int row, bool pale) {
     static const uint32_t base[16] = {
@@ -204,6 +208,7 @@ struct pendulum : panel_t {
     memset(row_t0, 0, sizeof(row_t0));
     last_tap_time = 0;
     memset(&voice_allocator, 0, sizeof(voice_allocator));
+    launch_counter = 0;
     memset(&div, 0, sizeof(div));
     oct = 0;
     damp = 3;
@@ -229,7 +234,7 @@ struct pendulum : panel_t {
   void end_gate(int row) {
     lane_t &L = lane[row];
     if (L.gate_voice >= 0) synth_note_up(L.gate_voice);
-    voice_allocator.voice_allocate(VOICE_SOURCE_BASE + row, 0, 0, DEFAULT_VOICE_ALLOCATOR_VOICES);
+    voice_allocator.voice_allocate(VOICE_SOURCE_BASE + row, 0, 0, VOICE_POOL);
     L.gate_voice = -1;
     L.gate_on = false;
   }
@@ -239,9 +244,20 @@ struct pendulum : panel_t {
     int note = lane_note(row, wall);
     int64_t half_us = ((int64_t)L.half_ticks * qn_period_us) >> 4; // 1 tick = 1/16 quarter note
     int gate_us = clampi((int)((half_us * 2) / 5), 8000, 45000);
+    // load guard: count audible voices (gated or still ringing). When the pool runs low, shorten the gate so voices
+    // free up sooner and stealing stays the exception. 3+ free = normal, 2 free = 75%, 1 free = 50%, 0 free = 25%.
+    int busy = 0;
+    for (int i = 0; i < VOICE_POOL; i++) if (get_synth_env_level_q16(i) > BUSY_ENV) busy++;
+    int free_v = VOICE_POOL - busy;
+    if (free_v < 3) gate_us = maxi(8000, (gate_us * (free_v <= 0 ? 1 : free_v == 1 ? 2 : 3)) >> 2);
     uint32_t src = VOICE_SOURCE_BASE + row;
-    int old_voice = voice_allocator.find_voice(src, 0, DEFAULT_VOICE_ALLOCATOR_VOICES);
-    int v = voice_allocator.voice_allocate(src, VOICE_PRIO, 0, DEFAULT_VOICE_ALLOCATOR_VOICES, SYNTH_PRESET_IDX);
+    // recency priority: the newest lane gets the highest priority, so it steals from older lanes, never the reverse.
+    // Stealing only happens when all voices are busy; otherwise every lane keeps its own voice.
+    int rank = 0;
+    for (int i = 0; i < LANES; i++) if (i != row && lane[i].state == LS_RUN && (int32_t)(lane[i].launch_seq - L.launch_seq) > 0) rank++;
+    uint8_t prio = (uint8_t)(VOICE_PRIO + LANES - rank);
+    int old_voice = voice_allocator.find_voice(src, 0, VOICE_POOL);
+    int v = voice_allocator.voice_allocate(src, prio, 0, VOICE_POOL, SYNTH_PRESET_IDX);
     if (v != old_voice && old_voice >= 0) synth_note_up(old_voice);
     L.gate_voice = (int8_t)v;
     if (v >= 0) play_synth(v, SYNTH_PRESET_IDX, vel, note << 8, true);
@@ -279,6 +295,7 @@ struct pendulum : panel_t {
       int grid = mini(half_ticks_for(L.base_rate), 16);
       if (step % (uint32_t)grid) return; // wait for the lane's own grid line on the main clock
       L.state = LS_RUN;
+      L.launch_seq = ++launch_counter;
       L.dir = L.pend_dir;
       L.hits = 0;
       L.energy = L.pend_energy;
