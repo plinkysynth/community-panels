@@ -1,7 +1,6 @@
 /*
 @Name: PENDULUM
 @Author: PERPLEX ON
-@Firmware: beta
 @Tags: sequencer, physics, pendulum, pressure, midi
 @Preferred Panels: Blocks
 @Description: Swipe a row to launch a damped pendulum.

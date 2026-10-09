@@ -1,7 +1,6 @@
 /*
 @Name: Kristallwuchs
 @Author: PERPLEX ON
-@Firmware: beta
 @Tags: generative, physics, midi, synth, visuals
 @Preferred Panels: blocks
 @Description: Diffusion-limited aggregation as an instrument. Random walkers freeze onto a growing crystal and every docking plays a note.

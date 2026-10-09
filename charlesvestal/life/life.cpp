@@ -1,7 +1,6 @@
 /*
 @Name: Life
 @Author: Charles Vestal
-@Firmware: eb9e
 @Description: A Game of Life sequencer. Four voices walk an evolving 16x16 world and play what they find alive.
 @Preferred Panels: all
 @Tags: sequencer, generative, midi, conway, automata

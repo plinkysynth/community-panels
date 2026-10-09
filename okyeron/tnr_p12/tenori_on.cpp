@@ -1,7 +1,6 @@
 /*
 @Name: TNR-p12
 @Author: okyeron
-@Firmware: latest
 @Tags: sequencer, groovebox, midi
 @Preferred Panels: all
 @Description: An 8-layer 16-step grid sequencer with Score, Random, and Bounce modes, inspired by the Yamaha Tenori-On.

@@ -3,7 +3,6 @@
 @Name: Worm
 @Author: mmalex
 @Description: A pressure-driven granular sampler backed by PSRAM.
-@Firmware: latest
 @Tags: granular
 
 Hold the bottom-right record pad while touching main pads to start recording stereo input into
@@ -121,9 +120,9 @@ struct worm : panel_t {
   static int pad_y(int pad) { return pad >> 4; }
   static int xy_pad(int x, int y) { return (y << 4) | x; }
 
-  void setup_default_panel_state() override {
-    panel_t::setup_default_panel_state();
-    printf("worm: setup_default_panel_state\n");
+  void on_setup_default_panel_state() override {
+    panel_t::on_setup_default_panel_state();
+    printf("worm: on_setup_default_panel_state\n");
     pad_capacity = (get_psram_size() / sizeof(stereo16_t)) / PIECES;
     if (pad_capacity)
       memset(get_psram_ptr(), 0, (size_t)pad_capacity * (size_t)PIECES * sizeof(stereo16_t));

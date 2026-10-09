@@ -20,7 +20,7 @@ to review your files and add them to the community collection.
 
 1. **Get your panel ready.** Test it in the [Plinky 12 web
    IDE](https://plinky12.com/ide.html), then save your panel's `.cpp` source
-   file. Add the required metadata (your author name and firmware version),
+   file. Add the required metadata (your author name),
    plus a display name and short description to help people find it. The
    sections below explain the details.
 2. **Make your own copy of this repository.** Sign in to GitHub and click
@@ -124,7 +124,6 @@ metadata. Every community panel must include:
 /*
 @Name: My Panel
 @Author: Your Name
-@Firmware: latest
 @Tags: sequencer, midi
 @Preferred Panels: blocks, chords
 @Description: A one-sentence summary shown in the library.
@@ -140,12 +139,14 @@ This is useful for keeping longer `@Description` values readable in source.
 Required fields:
 
 - `@Author`: author or maintainer name.
-- `@Firmware`: firmware base to build against. Use `latest` for the current
-  beta firmware, `beta`, `alpha`, or `release` for a specific channel, or a
-  four-character firmware build code such as `c019` to pin the panel to a
-  specific firmware base. The maintainer can only bless artifacts for firmware
-  entries that are listed in Plinky's `versions.json` and whose Git commit is
-  available locally.
+
+Firmware is selected by the maintainer's build pipeline, not by panel authors.
+Every collection update builds all panels against the newest published,
+non-yanked Plinky firmware source revision (normally the latest alpha).
+Old `@Firmware` fields are ignored; do not add new ones. The panel page reports
+when its downloadable artifact was built and the firmware revision and date
+it was built against. Existing downloads stay unchanged until the next
+successful collection update is published.
 
 Optional fields:
 

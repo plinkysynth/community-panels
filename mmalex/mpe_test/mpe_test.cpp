@@ -11,7 +11,6 @@
   and preset load/save pages, using the same parameter order as Toadstep and Blocks. This is a
   first test of MPE on Plinky 12, and sets the stage for adding MPE support to other panels. Code
   is available in the IDE.
-@Firmware: latest
 @Tags: midi
 */
 #define PANEL_PAD_COLOR YELLOW
@@ -57,9 +56,9 @@ struct mpe_test : panel_t {
     return buf;
   }
 
-  void setup_default_panel_state() override {
-    panel_t::setup_default_panel_state();
-    printf("mpe_test: setup_default_panel_state\n");
+  void on_setup_default_panel_state() override {
+    panel_t::on_setup_default_panel_state();
+    printf("mpe_test: on_setup_default_panel_state\n");
     memset(&voice_allocator, 0, sizeof(voice_allocator));
     memset(&mpe, 0, sizeof(mpe));
     mpe.generation_now = 1;

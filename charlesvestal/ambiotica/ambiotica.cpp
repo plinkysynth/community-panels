@@ -1,7 +1,6 @@
 /*
 @Name: Ambiotica
 @Author: Charles Vestal
-@Firmware: beta
 @Version: 1.1
 @Description: Play a few notes and let go. A rolling looper, a granular cloud, a plate reverb and a bank of tuned resonators turn them into a slow wash, with an 8-track drum machine running dry underneath.
 @Preferred Panels: chords

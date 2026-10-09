@@ -1,7 +1,6 @@
 /*
 @Name: Zone Plate
 @Author: mmalex
-@Firmware: latest
 @Documentation: https://github.com/plinkysynth/community-panels/tree/main/mmalex/zone_plate
 @Tags: visuals
 @Preferred Panels: all

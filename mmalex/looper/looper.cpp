@@ -3,7 +3,6 @@
 @Name: Looper
 @Author: mmalex
 @Description: An 8-track touch looper backed by PSRAM.
-@Firmware: latest
 @Tags: looper
 
 Eight track rows share the surface with per-track controls. Hold record and tap a row to arm it; stopped
@@ -775,9 +774,9 @@ struct looper : panel_t {
   }
 
   // Initializes PSRAM loop capacity after the panel state has been zero-initialized.
-  void setup_default_panel_state() override {
-    panel_t::setup_default_panel_state();
-    printf("looper: setup_default_panel_state\n");
+  void on_setup_default_panel_state() override {
+    panel_t::on_setup_default_panel_state();
+    printf("looper: on_setup_default_panel_state\n");
     loop_capacity = (get_psram_size() / sizeof(stereo16_t)) / (N + 1);
     codec_enable_mic(audio_source == 1);
   }
