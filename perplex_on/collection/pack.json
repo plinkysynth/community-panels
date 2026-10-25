@@ -1,0 +1,12 @@
+{
+  "name": "PERPLEX ON Collection",
+  "author": "PERPLEX ON",
+  "description": "Three panels exploring movement: Pendulum, Kristallwuchs and Spiegel 12, together in one firmware download.",
+  "tags": "pack, generative, sequencer, instrument",
+  "preferredPanels": "blocks",
+  "panels": [
+    "perplex_on/pendulum",
+    "perplex_on/kristallwuchs",
+    "perplex_on/spiegel_12"
+  ]
+}

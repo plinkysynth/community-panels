@@ -61,7 +61,7 @@ author_slug/
 
 Each author directory can contain one optional `README.md` and one or more panel
 directories. Each panel directory must contain exactly one `.cpp` file directly
-inside the directory. Do not put panel `.cpp` files at the repository root or
+inside the directory, or a `pack.json` for a panel pack (see below). Do not put panel `.cpp` files at the repository root or
 directly inside an author directory, and do not use subdirectories inside a
 panel submission.
 
@@ -178,6 +178,64 @@ Optional fields:
 Do not use `@Artwork` metadata in community panel submissions. If a panel has
 artwork, include exactly one file named `artwork.png` or `artwork.webp` next to
 the `.cpp` file.
+
+## Panel Packs
+
+A pack is a named collection of **two to four existing community panels**, built
+into one downloadable firmware alongside Grid. It appears in the same gallery
+and author section as individual panels, with a pack badge and links to each
+member's page and manual. Panels run individually when selected on the device.
+
+Submit a pack through the same PR process, using `pack.json` **instead of** a
+`.cpp` file:
+
+```text
+author_slug/
+  my_collection/
+    pack.json
+    README.md       # optional
+    artwork.png     # optional square override; artwork.webp also accepted
+    manual.pdf      # optional pack manual, up to 5 MiB
+```
+
+```json
+{
+  "name": "My Collection",
+  "author": "Your Name",
+  "description": "A short description of the collection.",
+  "tags": "pack, sequencer, generative",
+  "preferredPanels": "blocks",
+  "panels": ["author_slug/first_panel", "author_slug/second_panel"]
+}
+```
+
+`name`, `author`, `description`, and `panels` are required. Optional text fields
+are `tags`, `preferredPanels`, `version`, `documentation`, `discussion`, and
+`video`; they have the same meaning as the corresponding C++ metadata fields.
+Unknown fields are rejected. Credit the creators of included panels in your
+README; each member's own attribution remains visible on the pack page.
+
+Members must be distinct panel IDs in this repository. Packs cannot contain
+other packs, external source URLs, firmware pins, or C++ files. Runtime panel
+names must be unique, including the automatically included Grid. The listed
+order determines the mosaic and website contents; the device uses its normal
+panel ordering.
+
+If artwork is omitted, publishing generates a square 2×2 mosaic from the member
+artwork, with text for missing images and spare tiles. For four members all four
+tiles are used. You can supply your own square artwork to override it.
+
+Packs follow the normal whole-collection publishing process. Every member uses
+the same published firmware source, and a pack that fails validation or linking
+prevents publication of that collection update. Member source changes invalidate
+the pack build; its build record lists all members and their source hashes.
+
+**Open in IDE** loads the members and the bundled Grid into separate tabs. The
+IDE supports five panel tabs so four-member packs fit. Existing identical tabs
+are reused; modified or conflicting tabs and insufficient space are reported
+without overwriting code or partially importing the pack. Gallery previews,
+manuals, and prebuilt UF2 downloads work on a static local server; compiling
+edited sources needs the development backend.
 
 ## Code Requirements
 
