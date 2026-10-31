@@ -109,6 +109,7 @@ struct pendulum : panel_t {
   uint8_t damp = 3;  // 0..8, 0 = off (endless, no slowdown), higher = faster energy decay
   uint8_t speed_mode = 0; // 0 = swipe speed (default), 1 = swipe distance from the launch edge to mid-grid
   bool settings_changed = false;
+  int notehash_last; // for display purposes
 
   int get_num_pages() override { return 3; }                // 0 = play, 1 = sound, 2 = save/load
   int get_num_panel_settings_pages() override { return 5; } // key, scale, octave, damping, speed source
@@ -704,6 +705,32 @@ struct pendulum : panel_t {
     }
   }
 
+  // Displays notes which are currently playing on second screen
+  // https://plinky12.com/second_screen_app.html
+  void ShowNoteHelpText() {
+    int notehash = 0;
+    char buf[64];
+    int charpos = 0;
+
+    int amt = current_key % 12;
+    bool acc = circle_fifths_to_accidental[((amt<0)?1:0)][abs(amt)];    
+  
+    for (int i = 0; i < LANES; ++i) {
+      if (lane[i].gate_vel >= 16) {
+        notehash = notehash * 7537 + lane[i].gate_note;
+        if (charpos) buf[charpos++] = ' ';
+        midi_note_to_name(lane[i].gate_note, true, buf + charpos, acc);
+        charpos += strlen(buf + charpos);
+      }
+    }
+    if (!charpos) buf[charpos++] = ' ';
+    buf[charpos] = 0;
+    if (notehash != notehash_last) {
+      notehash_last = notehash;
+      set_help_text(buf);
+    }
+  }  
+
   void on_ui(int delta_time_us) override {
     (void)delta_time_us;
     int page = get_scroll_page();
@@ -724,6 +751,7 @@ struct pendulum : panel_t {
       track_touches(now);
       for (int y = 0; y < LANES; ++y) draw_lane(y, now);
     }
+    ShowNoteHelpText();
     if (settings_changed) {
       (void)save_settings_to_sd(false);
       settings_changed = false;
