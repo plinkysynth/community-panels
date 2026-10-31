@@ -150,6 +150,8 @@ struct kristallwuchs : panel_t {
   preset_pages_t preset_pages;
   panel_page_t panel_page;
   float fb[3][256] = {};
+  
+  int notehash_last; // for display purposes
 
   // ---------------------------------------------------------------- params
   int div_num() const {
@@ -697,6 +699,32 @@ struct kristallwuchs : panel_t {
     }
   }
 
+  // Displays notes which are currently playing on second screen
+  // https://plinky12.com/second_screen_app.html
+  void ShowNoteHelpText() {
+    int notehash = 0;
+    char buf[64];
+    int charpos = 0;
+
+    int amt = current_key % 12;
+    bool acc = circle_fifths_to_accidental[((amt<0)?1:0)][abs(amt)];    
+  
+    for (int i = 0; i < KR_GATES; ++i) {
+      if (gates[i].vel >= 16) {
+        notehash = notehash * 7537 + gates[i].note;
+        if (charpos) buf[charpos++] = ' ';
+        midi_note_to_name(gates[i].note, true, buf + charpos, acc);
+        charpos += strlen(buf + charpos);
+      }
+    }
+    if (!charpos) buf[charpos++] = ' ';
+    buf[charpos] = 0;
+    if (notehash != notehash_last) {
+      notehash_last = notehash;
+      set_help_text(buf);
+    }
+  }    
+
   void on_ui(int delta_time_us) override {
     int page = get_scroll_page();
     read_tilt();
@@ -717,6 +745,7 @@ struct kristallwuchs : panel_t {
     } else {
       draw_play_page(delta_time_us);
     }
+    ShowNoteHelpText();
     if (settings_changed) {
       (void)save_settings_to_sd(false);
       settings_changed = false;
