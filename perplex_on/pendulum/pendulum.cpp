@@ -167,8 +167,10 @@ struct pendulum : panel_t {
   static void ensure_harmony() {
     bool bad_key = current_key > 127;
     bool bad_scale = (current_scale & 0x0fff) == 0;
-    if (bad_key || bad_scale)
+    if (bad_key || bad_scale) {
       set_current_key_and_scale(bad_key ? 0 : current_key, bad_scale ? SCALE_MAJOR : current_scale);
+      PublishMusicalState();
+    }
   }
 
   int lane_note(int row, int wall) {
@@ -209,9 +211,13 @@ struct pendulum : panel_t {
     damp = 3;
     speed_mode = 0;
     ensure_harmony();
+    PublishMusicalState();
   }
 
-  void on_load_finished() override { ensure_harmony(); }
+  void on_load_finished() override { 
+    ensure_harmony();
+    PublishMusicalState(); 
+  }
 
   bool on_serialise(serialiser_t &s, int version) override;
 
@@ -665,6 +671,7 @@ struct pendulum : panel_t {
       if (delta) {
         int npc = ((pc + delta) % 12 + 12) % 12;
         set_current_key((uint8_t)mini(127, (current_key / 12) * 12 + npc));
+        PublishMusicalState();
       }
     } else if (page == -2) {
       // Same 12-scale set as Press Cafe 12 / Charge Bounce 16 (masks are 12-bit, root-relative).
@@ -676,7 +683,10 @@ struct pendulum : panel_t {
       for (int i = 0; i < 12; ++i)
         if (masks[i] == current_scale) idx = i;
       int delta = draw_system_style_enum_settings_page("scl", idx, names, 12, row_col(8, false));
-      if (delta) set_current_scale(masks[((idx + delta) % 12 + 12) % 12]);
+      if (delta) {
+        set_current_scale(masks[((idx + delta) % 12 + 12) % 12]);
+        PublishMusicalState();
+      }
     } else if (page == -3) {
       char b[6];
       snprintf(b, sizeof(b), "%+d", (int)oct);
@@ -704,6 +714,16 @@ struct pendulum : panel_t {
       }
     }
   }
+
+  static void PublishMusicalState(void) {
+    set_current_key_and_scale(current_key, current_scale);
+    set_current_chord_state(current_key, current_scale & 0x0fffu, current_scale & 0x0fffu);
+    uint8_t voicing[CURRENT_VOICING_MAX_NOTES] = {};
+    for (int i = 0; i < CHORD_NUM_VOICES; ++i) {
+      voicing[i] = degree_to_note(i, current_scale);;
+    }
+    set_current_voicing(voicing, CURRENT_VOICING_MAX_NOTES);
+  }  
 
   // Displays notes which are currently playing on second screen
   // https://plinky12.com/second_screen_app.html
