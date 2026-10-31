@@ -210,10 +210,12 @@ struct kristallwuchs : panel_t {
     panel_t::setup_default_panel_state();
     default_seeds();
     reset_runtime();
+    PublishMusicalState();
   }
 
   void on_load_finished() override {
     reset_runtime(); // saved seed layout is kept as-is, including "no seeds" (silent)
+    PublishMusicalState();
   }
 
   // ---------------------------------------------------------------- note engine
@@ -669,11 +671,13 @@ struct kristallwuchs : panel_t {
     static const char *const NOTE_NAMES[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
     static const char *const SCALE_NAMES[8] = {"maj", "min", "dor", "pent", "mpnt", "hira", "lyd", "phr"};
     static const char *const DIV_NAMES[5] = {"1/4", "1/8", "8T", "1/16", "1/32"};
-    if (page == -1)
+    if (page == -1) {
       change_setting(root, draw_system_style_enum_settings_page("root", root, NOTE_NAMES, 12), 11);
-    else if (page == -2)
+      PublishMusicalState();
+    } else if (page == -2) {
       change_setting(scale_idx, draw_system_style_enum_settings_page("scl", scale_idx, SCALE_NAMES, 8), 7);
-    else if (page == -3)
+      PublishMusicalState();
+    } else if (page == -3)
       change_setting(div_idx, draw_system_style_enum_settings_page("div", div_idx, DIV_NAMES, 5), 4);
   }
 
@@ -707,6 +711,18 @@ struct kristallwuchs : panel_t {
       ignore_all_fingers();
     }
   }
+
+  void PublishMusicalState(void) {
+    uint16_t key = (KR_BASE_NOTE + root) % 12;
+    uint16_t scale = kr_scale_mask(scale_idx);
+    set_current_key_and_scale(key, scale);
+    set_current_chord_state(key, scale & 0x0fffu, scale & 0x0fffu);
+    uint8_t voicing[CURRENT_VOICING_MAX_NOTES] = {};
+    for (int i = 0; i < CHORD_NUM_VOICES; ++i) {
+      voicing[i] = degree_to_note(i, scale);;
+    }
+    set_current_voicing(voicing, CURRENT_VOICING_MAX_NOTES);
+  } 
 
   // Displays notes which are currently playing on second screen
   // https://plinky12.com/second_screen_app.html
