@@ -53,7 +53,16 @@ static int kr_round(float x) { return x >= 0.f ? (int)(x + 0.5f) : -(int)(-x + 0
 
 // ---- scale helpers (panel-owned harmony, no dependency on boot-time globals) ----
 static uint16_t kr_scale_mask(int scale_idx) {
-  static const uint16_t MASKS[8] = {0xAB5, 0x5AD, 0x6AD, 0x295, 0x4A9, 0x18D, 0xAD5, 0x5AB};
+  static const uint16_t MASKS[8] = {
+      SCALE_MAJOR,            // maj
+      SCALE_MINOR,            // min
+      SCALE_DORIAN,           // dor
+      SCALE_PENTATONIC_MAJOR, // pent
+      SCALE_PENTATONIC_MINOR, // mpnt
+      SCALE_HIRAJOSHI,        // hira
+      SCALE_LYDIAN,           // lyd
+      SCALE_PHRYGIAN,         // phr
+  };
   return MASKS[clampi(scale_idx, 0, 7)];
 }
 
