@@ -110,6 +110,7 @@ struct pendulum : panel_t {
   uint8_t speed_mode = 0; // 0 = swipe speed (default), 1 = swipe distance from the launch edge to mid-grid
   bool settings_changed = false;
   int notehash_last; // for display purposes
+  uint32_t observed_musical_state; // used to sync scale and key with other panels
 
   int get_num_pages() override { return 3; }                // 0 = play, 1 = sound, 2 = save/load
   int get_num_panel_settings_pages() override { return 5; } // key, scale, octave, damping, speed source
@@ -677,8 +678,18 @@ struct pendulum : panel_t {
       // Same 12-scale set as Press Cafe 12 / Charge Bounce 16 (masks are 12-bit, root-relative).
       static const char *const names[12] = {"chrom", "major", "minor", "dor",  "phryg", "lyd",
                                             "mixo",  "locr",  "hmin",  "pmaj", "pmin",  "blues"};
-      static const uint16_t masks[12] = {SCALE_CHROMATIC, SCALE_MAJOR, SCALE_MINOR, 0x6AD, 0x5AB, 0xAD5,
-                                         0x6B5,           0x56B,       0x9AD,       0x295, 0x4A9, 0x4E9};
+      static const uint16_t masks[12] = { SCALE_CHROMATIC, 
+                                          SCALE_MAJOR, 
+                                          SCALE_MINOR, 
+                                          SCALE_DORIAN, 
+                                          SCALE_PHRYGIAN, 
+                                          SCALE_LYDIAN,
+                                          SCALE_MIXOLYDIAN, 
+                                          SCALE_LOCRIAN, 
+                                          SCALE_HARMONIC_MINOR, 
+                                          SCALE_PENTATONIC_MAJOR, 
+                                          SCALE_PENTATONIC_MINOR, 
+                                          SCALE_BLUESMINOR };
       int idx = 1; // fall back to major
       for (int i = 0; i < 12; ++i)
         if (masks[i] == current_scale) idx = i;
