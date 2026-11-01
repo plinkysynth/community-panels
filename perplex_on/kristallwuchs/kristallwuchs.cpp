@@ -731,8 +731,8 @@ struct kristallwuchs : panel_t {
     char buf[64];
     int charpos = 0;
 
-    int amt = current_key % 12;
-    bool acc = circle_fifths_to_accidental[((amt<0)?1:0)][abs(amt)];    
+    int root = current_key % 12;
+    bool acc = KeyToAccidental[0][root];   
   
     for (int i = 0; i < KR_GATES; ++i) {
       if (gates[i].vel >= 16) {
