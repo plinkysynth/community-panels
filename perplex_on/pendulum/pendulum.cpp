@@ -223,7 +223,7 @@ struct pendulum : panel_t {
     oct = 0;
     damp = 3;
     speed_mode = 0;
-    harmonic_follow = HARMONIC_FOLLOW_KEY;
+    harmonic_follow = HARMONIC_FOLLOW_CHORD_NOTES;
     ensure_harmony();
     PublishMusicalState();
   }
@@ -745,7 +745,7 @@ struct pendulum : panel_t {
                                                             HARMONIC_FOLLOW_KEY, 
                                                             HARMONIC_FOLLOW_CHORD_NOTES,
                                                             HARMONIC_FOLLOW_CHORD_SCALE,};
-      int idx = HARMONIC_FOLLOW_KEY; // fall back to key / scale
+      int idx = HARMONIC_FOLLOW_CHORD_NOTES; // fall back to follow chord notes
       int delta = draw_system_style_enum_settings_page("follow", harmonic_follow, names, HARMONIC_FOLLOW_LAST, row_col(8, false));
       if (delta) {
         harmonic_follow = (uint8_t)clampi((int)harmonic_follow + delta, HARMONIC_FOLLOW_IGNORE, HARMONIC_FOLLOW_CHORD_SCALE);
