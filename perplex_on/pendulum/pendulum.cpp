@@ -118,7 +118,8 @@ struct pendulum : panel_t {
   enum {
     HARMONIC_FOLLOW_IGNORE,
     HARMONIC_FOLLOW_KEY,
-    HARMONIC_FOLLOW_CHORD,
+    HARMONIC_FOLLOW_CHORD_NOTES,
+    HARMONIC_FOLLOW_CHORD_SCALE,
     HARMONIC_FOLLOW_LAST
   };  
 
@@ -240,7 +241,7 @@ struct pendulum : panel_t {
     FIELD("oct", oct, -2, 2);
     FIELD("damp", damp, 0u, 8u);
     FIELD("spdmode", speed_mode, 0u, 1u);
-    FIELD("follow", harmonic_follow, 0u, 2u);
+    FIELD("follow", harmonic_follow, 0u, 3u);
     OBJECT_END(s);
     return true;
   }
@@ -739,14 +740,15 @@ struct pendulum : panel_t {
       }
     } else if (page == -6) {
       // Options how to interpret incoming harmonic state
-      static const char *const names[HARMONIC_FOLLOW_LAST] = {"off", "key", "chrd"};
+      static const char *const names[HARMONIC_FOLLOW_LAST] = {"off", "key", "chrd", "cscl"};
       static const uint16_t masks[HARMONIC_FOLLOW_LAST] = { HARMONIC_FOLLOW_IGNORE, 
-                                          HARMONIC_FOLLOW_KEY, 
-                                          HARMONIC_FOLLOW_CHORD};
+                                                            HARMONIC_FOLLOW_KEY, 
+                                                            HARMONIC_FOLLOW_CHORD_NOTES,
+                                                            HARMONIC_FOLLOW_CHORD_SCALE,};
       int idx = HARMONIC_FOLLOW_KEY; // fall back to key / scale
       int delta = draw_system_style_enum_settings_page("follow", harmonic_follow, names, HARMONIC_FOLLOW_LAST, row_col(8, false));
       if (delta) {
-        harmonic_follow = (uint8_t)clampi((int)harmonic_follow + delta, HARMONIC_FOLLOW_IGNORE, HARMONIC_FOLLOW_CHORD);
+        harmonic_follow = (uint8_t)clampi((int)harmonic_follow + delta, HARMONIC_FOLLOW_IGNORE, HARMONIC_FOLLOW_CHORD_SCALE);
         if(harmonic_follow != HARMONIC_FOLLOW_IGNORE) 
           observed_musical_state = 0; // force reevaluation
         read_harmonic_state_changes();
@@ -775,12 +777,19 @@ struct pendulum : panel_t {
         key = current_key;
         scale = current_scale & 0x0fffu;
       }
-    } else if(harmonic_follow == HARMONIC_FOLLOW_CHORD) {
+    } else if(harmonic_follow == HARMONIC_FOLLOW_CHORD_SCALE) {
       // follow chord
       if (harmonic_key_midi_note(key) != current_chord_root || (scale & 0x0fffu) != (current_chord_scale & 0x0fffu)) {
         // apply harmonic follow state
         key = current_chord_root;
         scale = current_chord_scale & 0x0fffu;
+      }
+    } else if(harmonic_follow == HARMONIC_FOLLOW_CHORD_NOTES) {
+      // follow chord
+      if (harmonic_key_midi_note(key) != current_chord_root || (scale & 0x0fffu) != (current_chord_notes & 0x0fffu)) {
+        // apply harmonic follow state
+        key = current_chord_root;
+        scale = current_chord_notes & 0x0fffu;
       }
     }
   } 
