@@ -110,10 +110,20 @@ struct pendulum : panel_t {
   uint8_t speed_mode = 0; // 0 = swipe speed (default), 1 = swipe distance from the launch edge to mid-grid
   bool settings_changed = false;
   int notehash_last; // for display purposes
-  uint32_t observed_musical_state; // used to sync scale and key with other panels
+  uint8_t key; 
+  uint16_t scale;
+  uint32_t observed_musical_state; // used to sync scale and key with other panels^
+  uint8_t harmonic_follow;
+
+  enum {
+    HARMONIC_FOLLOW_IGNORE,
+    HARMONIC_FOLLOW_KEY,
+    HARMONIC_FOLLOW_CHORD,
+    HARMONIC_FOLLOW_LAST
+  };  
 
   int get_num_pages() override { return 3; }                // 0 = play, 1 = sound, 2 = save/load
-  int get_num_panel_settings_pages() override { return 5; } // key, scale, octave, damping, speed source
+  int get_num_panel_settings_pages() override { return 6; } // key, scale, octave, damping, speed source, follow
 
   // ---- small helpers ---------------------------------------------------------------------------------------------
   static inline int iabs(int v) { return v < 0 ? -v : v; }
@@ -165,11 +175,12 @@ struct pendulum : panel_t {
   }
 
   // Guard against invalid key/scale at boot (both boot paths call this).
-  static void ensure_harmony() {
-    bool bad_key = current_key > 127;
-    bool bad_scale = (current_scale & 0x0fff) == 0;
+  void ensure_harmony() {
+    bool bad_key = key > 127;
+    bool bad_scale = (scale & 0x0fff) == 0;
     if (bad_key || bad_scale) {
-      set_current_key_and_scale(bad_key ? 0 : current_key, bad_scale ? SCALE_MAJOR : current_scale);
+      key = bad_key ? harmonic_key_midi_note(0) : key;
+      scale = bad_scale ? SCALE_MAJOR : scale;
       PublishMusicalState();
     }
   }
@@ -177,14 +188,14 @@ struct pendulum : panel_t {
   int lane_note(int row, int wall) {
     ensure_harmony();
     int pos = 15 - row;
-    int root_note = clampi(48 + 12 * oct + (current_key % 12), 0, 127);
-    int n = scale_play_surface_note(root_note, pos, current_key, current_scale);
+    int root_note = clampi(48 + 12 * oct + (key % 12), 0, 127);
+    int n = scale_play_surface_note(root_note, pos, key, scale);
     if (wall) {
       // "Fifth" = the scale note closest to +7 semitones (perfect, diminished or augmented depending on the
       // degree), so the right wall is always in key. Built from scale_play_surface_note only.
       int best = n + 7, best_d = 99;
       for (int k = 1; k <= 8; ++k) {
-        int c = scale_play_surface_note(root_note, pos + k, current_key, current_scale);
+        int c = scale_play_surface_note(root_note, pos + k, key, scale);
         int d = iabs(c - n - 7);
         if (d < best_d) {
           best_d = d;
@@ -211,6 +222,7 @@ struct pendulum : panel_t {
     oct = 0;
     damp = 3;
     speed_mode = 0;
+    harmonic_follow = HARMONIC_FOLLOW_KEY;
     ensure_harmony();
     PublishMusicalState();
   }
@@ -228,6 +240,7 @@ struct pendulum : panel_t {
     FIELD("oct", oct, -2, 2);
     FIELD("damp", damp, 0u, 8u);
     FIELD("spdmode", speed_mode, 0u, 1u);
+    FIELD("follow", harmonic_follow, 0u, 2u);
     OBJECT_END(s);
     return true;
   }
@@ -307,6 +320,7 @@ struct pendulum : panel_t {
   void on_sequence(int delta_time_us) override {
     (void)delta_time_us;
     uint32_t now = time_us();
+    read_harmonic_state_changes();
     ensure_harmony();
 
     for (int i = 0; i < LANES; ++i) {
@@ -667,11 +681,11 @@ struct pendulum : panel_t {
   void draw_settings_page(int page) {
     if (page == -1) {
       static const char *const names[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-      int pc = current_key % 12;
+      int pc = key % 12;
       int delta = draw_system_style_settings_page("key", names[pc], pc * 100 / 11, 0, 0, row_col(4, false));
       if (delta) {
         int npc = ((pc + delta) % 12 + 12) % 12;
-        set_current_key((uint8_t)mini(127, (current_key / 12) * 12 + npc));
+        key = (uint8_t)mini(127, (key / 12) * 12 + npc);
         PublishMusicalState();
       }
     } else if (page == -2) {
@@ -692,10 +706,10 @@ struct pendulum : panel_t {
                                           SCALE_BLUESMINOR };
       int idx = 1; // fall back to major
       for (int i = 0; i < 12; ++i)
-        if (masks[i] == current_scale) idx = i;
+        if (masks[i] == scale) idx = i;
       int delta = draw_system_style_enum_settings_page("scl", idx, names, 12, row_col(8, false));
       if (delta) {
-        set_current_scale(masks[((idx + delta) % 12 + 12) % 12]);
+        scale = masks[((idx + delta) % 12 + 12) % 12];
         PublishMusicalState();
       }
     } else if (page == -3) {
@@ -723,18 +737,63 @@ struct pendulum : panel_t {
         speed_mode = (uint8_t)clampi((int)speed_mode + delta, 0, 1);
         settings_changed = true;
       }
-    }
+    } else if (page == -6) {
+      // Options how to interpret incoming harmonic state
+      static const char *const names[HARMONIC_FOLLOW_LAST] = {"off", "key", "chrd"};
+      static const uint16_t masks[HARMONIC_FOLLOW_LAST] = { HARMONIC_FOLLOW_IGNORE, 
+                                          HARMONIC_FOLLOW_KEY, 
+                                          HARMONIC_FOLLOW_CHORD};
+      int idx = HARMONIC_FOLLOW_KEY; // fall back to key / scale
+      int delta = draw_system_style_enum_settings_page("follow", harmonic_follow, names, HARMONIC_FOLLOW_LAST, row_col(8, false));
+      if (delta) {
+        harmonic_follow = (uint8_t)clampi((int)harmonic_follow + delta, HARMONIC_FOLLOW_IGNORE, HARMONIC_FOLLOW_CHORD);
+        if(harmonic_follow != HARMONIC_FOLLOW_IGNORE) 
+          observed_musical_state = 0; // force reevaluation
+        read_harmonic_state_changes();
+        ensure_harmony();
+        PublishMusicalState();
+      }
+    } 
   }
 
-  static void PublishMusicalState(void) {
-    set_current_key_and_scale(current_key, current_scale);
-    set_current_chord_state(current_key, current_scale & 0x0fffu, current_scale & 0x0fffu);
+  static inline uint8_t harmonic_key_midi_note(int note) {
+    int pc = note % 12;
+    return (uint8_t)(60 + (pc < 0 ? pc + 12 : pc));
+  }
+
+  void read_harmonic_state_changes(void) {
+    uint32_t generation = get_current_musical_state_generation();
+    if (observed_musical_state == generation)
+      return;
+    observed_musical_state = get_current_musical_state_generation();
+    // follow key
+    if(harmonic_follow == HARMONIC_FOLLOW_IGNORE) {
+      return;
+    } else if(harmonic_follow == HARMONIC_FOLLOW_KEY) {
+      if (harmonic_key_midi_note(key) != current_key || (scale & 0x0fffu) != (current_scale & 0x0fffu)) {
+        // apply harmonic follow state
+        key = current_key;
+        scale = current_scale & 0x0fffu;
+      }
+    } else if(harmonic_follow == HARMONIC_FOLLOW_CHORD) {
+      // follow chord
+      if (harmonic_key_midi_note(key) != current_chord_root || (scale & 0x0fffu) != (current_chord_scale & 0x0fffu)) {
+        // apply harmonic follow state
+        key = current_chord_root;
+        scale = current_chord_scale & 0x0fffu;
+      }
+    }
+  } 
+
+  void PublishMusicalState(void) {
+    set_current_key_and_scale(key, scale);
+    set_current_chord_state(key, scale & 0x0fffu, scale & 0x0fffu);
     uint8_t voicing[CURRENT_VOICING_MAX_NOTES] = {};
     for (int i = 0; i < CHORD_NUM_VOICES; ++i) {
-      voicing[i] = degree_to_note(i, current_scale);;
+      voicing[i] = degree_to_note(i, scale);;
     }
     set_current_voicing(voicing, CURRENT_VOICING_MAX_NOTES);
-  }  
+  } 
 
   // Displays notes which are currently playing on second screen
   // https://plinky12.com/second_screen_app.html
@@ -743,7 +802,7 @@ struct pendulum : panel_t {
     char buf[64];
     int charpos = 0;
 
-    int root = current_key % 12;
+    int root = key % 12;
     bool acc = KeyToAccidental[0][root];    
   
     for (int i = 0; i < LANES; ++i) {
