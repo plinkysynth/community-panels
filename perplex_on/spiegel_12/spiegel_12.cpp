@@ -112,6 +112,19 @@ struct spiegel_12 : panel_t {
   int v_note_q8[NV] = {0, 0, 0, 0};
   uint8_t v_vel[NV] = {0, 0, 0, 0};
 
+  int notehash_last; // for display purposes
+  uint16_t scale;
+  uint32_t observed_musical_state; // used to sync scale and key with other panels^
+  uint8_t harmonic_follow;
+
+  enum {
+    HARMONIC_FOLLOW_IGNORE,
+    HARMONIC_FOLLOW_KEY,
+    HARMONIC_FOLLOW_CHORD_NOTES,
+    HARMONIC_FOLLOW_CHORD_SCALE,
+    HARMONIC_FOLLOW_LAST
+  }; 
+
   int get_num_pages() override { return 2; }
   int get_num_tracks(void) override { return SND; }
 
@@ -351,7 +364,11 @@ struct spiegel_12 : panel_t {
     }
     last_fine = fine;
     for (int v = 0; v < NV; ++v)
-      if (v_on[v]) send_voice(v, false); // continuous vibrato / tremolo / filter / delay
+      if (v_on[v]) {
+        send_voice(v, false); // continuous vibrato / tremolo / filter / delay
+        declare_midi_note((uint8_t)v, v_note_q8[v] >> 8, v_vel[v]);
+      }
+    send_declared_midi_notes();
   }
 
   // ---------- drawing ----------
@@ -436,6 +453,34 @@ struct spiegel_12 : panel_t {
     if (button(3, 15, DIMMEST(PINK), ISOLATED, "Edit sound")) page = PAGE_EDIT;
   }
 
+
+  // Displays notes which are currently playing on second screen
+  // https://plinky12.com/second_screen_app.html
+  void ShowNoteHelpText() {
+    int notehash = 0;
+    char buf[64];
+    int charpos = 0;
+
+    int root = trn12 % 12;
+    bool acc = KeyToAccidental[0][root];    
+  
+    for (int v = 0; v < NV; ++v) {
+      if (v_vel[v] > 16) {
+        int midi_note = v_note_q8[v] >> 8;
+        notehash = notehash * 7537 + midi_note;
+        if (charpos) buf[charpos++] = ' ';
+        midi_note_to_name(midi_note, true, buf + charpos, acc);
+        charpos += strlen(buf + charpos);
+      }
+    }
+    if (!charpos) buf[charpos++] = ' ';
+    buf[charpos] = 0;
+    if (notehash != notehash_last) {
+      notehash_last = notehash;
+      set_help_text(buf);
+    }
+  }  
+
   void on_ui(int delta_time_us) override {
     (void)delta_time_us;
     int scroll_page = get_scroll_page();
@@ -467,6 +512,7 @@ struct spiegel_12 : panel_t {
     draw_field();
     draw_pressure_pads();
     draw_taps();
+    ShowNoteHelpText();
   }
 
   bool on_serialise(serialiser_t &s, int version) override;
