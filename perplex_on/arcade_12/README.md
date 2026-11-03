@@ -1,8 +1,10 @@
 # ARCADE12
 
-See it in action: https://www.instagram.com/reel/DfKoD-MMp0r/?srtk=MXhuZHg5YWU1MmFuZA==
+[Download the PDF manual](manual.pdf)
 
 Two games that write their own soundtrack, one cartridge slot on Plinky 12. Pick a game, play, and the music follows every move.
+
+See it in action: https://www.instagram.com/reel/DfKoD-MMp0r/?srtk=MXhuZHg5YWU1MmFuZA==
 
 - **Selector:** Tap the left demo for KLOTZ, the right one for PRALL.
 - **Pad > in a game:** tap = play / pause, hold 0.7 s = back to the selector. A run in progress waits there, paused.
