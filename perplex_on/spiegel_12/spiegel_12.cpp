@@ -27,7 +27,12 @@ struct spiegel_12 : panel_t {
   static constexpr int PAD_DEADZONE = 50;  // raw pressure ignored below this (raise = less sensitive)
   static constexpr int PAD_FULL_PCT = 125; // full depth at this % of the user's max pressure (raise = needs harder press)
 
-  enum page_t : uint8_t { PAGE_PLAY, PAGE_EDIT, PAGE_LOAD };
+  enum page_t : int8_t {
+    PAGE_SETTINGS_FOLLOW = -1, 
+    PAGE_PLAY, 
+    PAGE_EDIT, 
+    PAGE_LOAD 
+  };
 
   // ---- lookup tables ----
   // Kept as function-local statics: class-scope constexpr arrays are unreliable on the device toolchain.
@@ -72,7 +77,7 @@ struct spiegel_12 : panel_t {
 
   preset_pages_t preset_pages;
   panel_page_t panel_page;
-  uint8_t page = PAGE_PLAY;
+  int8_t page = PAGE_PLAY;
 
   // ---- panel state (serialised) ----
   uint8_t mode = 4;     // 0..5 harmonic mode
@@ -105,17 +110,19 @@ struct spiegel_12 : panel_t {
 
   int notehash_last; // for display purposes
   uint32_t observed_musical_state; // used to sync scale and key with other panels^
-  uint8_t harmonic_follow;
+
+  // ---- panel settings (global, saved via on_serialise_settings) ----
+  uint8_t harmonic_follow = HARMONIC_FOLLOW_CHORD_SCALE;
+  bool settings_changed = false;
 
   enum {
     HARMONIC_FOLLOW_IGNORE,
     HARMONIC_FOLLOW_KEY,
-    HARMONIC_FOLLOW_CHORD_NOTES,
-    HARMONIC_FOLLOW_CHORD_SCALE,
     HARMONIC_FOLLOW_LAST
   }; 
 
   int get_num_pages() override { return 2; }
+  int get_num_panel_settings_pages() override { return 1; }  
   int get_num_tracks(void) override { return SND; }
 
   const char *get_track_name(int i, char buf[16]) override {
@@ -126,10 +133,24 @@ struct spiegel_12 : panel_t {
 
   void setup_default_panel_state() override {
     panel_t::setup_default_panel_state();
+
+    mode = 4;     // 0..5 harmonic mode
+    scale = scale_masks[mode];
+    contrary = 0; // 0 parallel, 1 contrary motion
+    treat = 0;    // 0 chord, 1 arp, 2 line, 3 improv
+    art = 2;      // 0 staccato, 1 half legato, 2 legato
+    pat = 4;      // 0 = off, 1..10 patterns
+    interval = 3; // 1..7 degrees between paired voices
+    trn12 = 12;   // transpose + 12 (0..24)
+    xo2 = 2;      // X octave + 2 (0..4)
+    yo2 = 2;      // Y octave + 2 (0..4)
+    snd = 0;      // 0..SND-1
+    latch = 0;
+    qi = 1; // quantise: 0 = off, 1 = 1/16
+
     synth_presets[0].hue = 0;
     synth_presets[1].hue = 40;
     synth_presets[2].hue = 80;
-    scale = scale_masks[mode];
     finger = cm = -1;
     inited = false;
     need_release = true;
@@ -330,6 +351,7 @@ struct spiegel_12 : panel_t {
     (void)delta_time_us;
     bool input = get_scroll_page() == 0 && page == PAGE_PLAY; // touches belong to the field
     bool active = get_scroll_page() == 0 && (input || latch); // Latch: keep sounding on Edit/Load pages
+    read_harmonic_state_changes();
     if (need_release) {
       release_all();
       need_release = false;
@@ -464,10 +486,50 @@ struct spiegel_12 : panel_t {
     if (button(3, 15, DIMMEST(PINK), ISOLATED, "Edit sound")) page = PAGE_EDIT;
   }
 
+  // ---------------------------------------------------------------- settings
+  bool change_setting(uint8_t &field, int delta, int max_value) {
+    int next = clampi(field + delta, 0, max_value);
+    if (next == field) return false;
+    field = (uint8_t)next;
+    settings_changed = true;
+    return true;
+  }
+
+  void draw_settings(int page) {
+    static const char *const FOLLOW_NAMES[HARMONIC_FOLLOW_LAST] = {"off", "key", "chrd", "cscl"};
+    if (page == -1) {
+      // Options how to interpret incoming harmonic state
+      if (change_setting(harmonic_follow, draw_system_style_enum_settings_page("follow", harmonic_follow, FOLLOW_NAMES, HARMONIC_FOLLOW_LAST), HARMONIC_FOLLOW_CHORD_SCALE)) {
+        if(harmonic_follow != HARMONIC_FOLLOW_IGNORE) 
+          observed_musical_state = 0; // force reevaluation
+        read_harmonic_state_changes();
+        PublishMusicalState();
+      }
+    }
+  }
+
   static inline uint8_t harmonic_key_midi_note(int note) {
     int pc = note % 12;
     return (uint8_t)(60 + (pc < 0 ? pc + 12 : pc));
   }
+
+  void read_harmonic_state_changes(void) {
+    uint32_t generation = get_current_musical_state_generation();
+    if (observed_musical_state == generation)
+      return;
+    observed_musical_state = get_current_musical_state_generation();
+    // follow key
+    if(harmonic_follow == HARMONIC_FOLLOW_IGNORE) {
+      return;
+    } else if(harmonic_follow == HARMONIC_FOLLOW_KEY) {
+      if (harmonic_key_midi_note(trn12) != current_key || (scale & 0x0fffu) != (current_scale & 0x0fffu)) {
+        // apply harmonic follow state
+        int root = current_key % 12;
+        trn12 = root < 6 ? root + 12 : root;
+        scale = current_scale & 0x0fffu;
+      }
+    }
+  } 
 
   void PublishMusicalState(void) {
     uint8_t key = harmonic_key_midi_note(trn12);
@@ -489,7 +551,22 @@ struct spiegel_12 : panel_t {
     uint32_t cscale = (scale + (scale << 12)) >> (root+trn12)%12;
     set_current_chord_state(root, cnotes & 0x0fffu, cscale & 0x0fffu);
     set_current_voicing(voicing, NV);
-  } 
+  }
+
+  /* void PublishMusicalState(void) {
+    uint8_t key = harmonic_key_midi_note(trn12);
+    set_current_key_and_scale(key, scale);
+    uint32_t ChordNotes = 0;
+    uint8_t voicing[NV] = {};
+    for (int v = 0; v < NV; ++v) {
+      uint8_t midi_note = v_note_q8[v] >> 8;
+      voicing[v] = midi_note;
+      ChordNotes |= 1 << (midi_note%12);
+    }
+    uint16_t cnotes = ChordNotes == 0 ? scale : ChordNotes;
+    set_current_chord_state(key, cnotes & 0x0fffu, scale & 0x0fffu);
+    set_current_voicing(voicing, NV);
+  } */
 
   // Displays notes which are currently playing on second screen
   // https://plinky12.com/second_screen_app.html
@@ -522,8 +599,11 @@ struct spiegel_12 : panel_t {
   void on_ui(int delta_time_us) override {
     (void)delta_time_us;
     int scroll_page = get_scroll_page();
-    if (scroll_page < 0) return;
     leds_clear();
+    if (scroll_page < 0) {
+      draw_settings(scroll_page);
+      return;
+    } 
     if (scroll_page == 1) {
       panel_page.saveload(16, true, FLAG_PICKER_ENABLE_DELETE);
       return;
@@ -554,6 +634,14 @@ struct spiegel_12 : panel_t {
   }
 
   bool on_serialise(serialiser_t &s, int version) override;
+
+  bool on_serialise_settings(serialiser_t &s, int version) override {
+    (void)version;
+    OBJECT_BEGIN(s);
+    FIELD("follow", harmonic_follow, 0u, 1u);
+    OBJECT_END(s);
+    return true;
+  }
 };
 
 static bool serialise(serialiser_t &s, spiegel_12 &o) {
@@ -576,7 +664,7 @@ static bool serialise(serialiser_t &s, spiegel_12 &o) {
   FIELD("qi", o.qi, 0u, 1u);
   OBJECT_END(s);
   return true;
-}
+}  
 
 bool spiegel_12::on_serialise(serialiser_t &s, int version) {
   (void)version;
