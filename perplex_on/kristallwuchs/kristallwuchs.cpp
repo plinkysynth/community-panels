@@ -775,7 +775,7 @@ struct kristallwuchs : panel_t {
   }  
 
   void PublishMusicalState(void) {
-    uint16_t key = harmonic_key_midi_note(KR_BASE_NOTE + root);
+    uint8_t key = harmonic_key_midi_note(KR_BASE_NOTE + root);
     set_current_key_and_scale(key, scale);
     set_current_chord_state(key, scale & 0x0fffu, scale & 0x0fffu);
     uint8_t voicing[CURRENT_VOICING_MAX_NOTES] = {};

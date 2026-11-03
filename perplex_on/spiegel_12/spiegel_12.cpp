@@ -32,24 +32,14 @@ struct spiegel_12 : panel_t {
   // ---- lookup tables ----
   // Kept as function-local statics: class-scope constexpr arrays are unreliable on the device toolchain.
 
-  // Scale degrees (semitones) per harmonic mode.
-  static int scale_note(int m, int i) {
-    static const uint8_t T[6][12] = {
-        {0, 3, 5, 7, 10, 0, 0, 0, 0, 0, 0, 0}, // Minor pentatonic
-        {0, 2, 3, 5, 7, 8, 11, 0, 0, 0, 0, 0}, // Harmonic minor
-        {0, 2, 4, 7, 11, 0, 0, 0, 0, 0, 0, 0}, // Maj9 (chord tones)
-        {0, 2, 4, 5, 7, 9, 11, 0, 0, 0, 0, 0}, // Diatonic
-        {0, 2, 4, 7, 9, 0, 0, 0, 0, 0, 0, 0},  // Pentatonic
-        {0, 5, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // Quartal
-    };
-    return T[m][i];
-  }
-
-  // Number of degrees per octave of each mode.
-  static int scale_len(int m) {
-    static const uint8_t T[6] = {5, 7, 5, 7, 5, 3};
-    return T[m];
-  }
+  // Scale degrees (semitones) per harmonic mode.    
+  
+  scale_t scale_masks[6] = { SCALE_PENTATONIC_MINOR, 
+                                            SCALE_HARMONIC_MINOR, 
+                                            SCALE_MAJOR_9, 
+                                            SCALE_MAJOR, 
+                                            SCALE_PENTATONIC_MAJOR, 
+                                            SCALE_QUARTAL };
 
   // Degree offset of step s in pattern p (pattern 0 = off).
   static int pattern_offset(int p, uint32_t s) {
@@ -86,6 +76,7 @@ struct spiegel_12 : panel_t {
 
   // ---- panel state (serialised) ----
   uint8_t mode = 4;     // 0..5 harmonic mode
+  uint16_t scale = SCALE_MAJOR_9;
   uint8_t contrary = 0; // 0 parallel, 1 contrary motion
   uint8_t treat = 0;    // 0 chord, 1 arp, 2 line, 3 improv
   uint8_t art = 2;      // 0 staccato, 1 half legato, 2 legato
@@ -113,7 +104,6 @@ struct spiegel_12 : panel_t {
   uint8_t v_vel[NV] = {0, 0, 0, 0};
 
   int notehash_last; // for display purposes
-  uint16_t scale;
   uint32_t observed_musical_state; // used to sync scale and key with other panels^
   uint8_t harmonic_follow;
 
@@ -139,10 +129,16 @@ struct spiegel_12 : panel_t {
     synth_presets[0].hue = 0;
     synth_presets[1].hue = 40;
     synth_presets[2].hue = 80;
+    scale = scale_masks[mode];
     finger = cm = -1;
     inited = false;
     need_release = true;
+    PublishMusicalState();
   }
+
+  void on_load_finished() override {
+    PublishMusicalState();
+  }  
 
   // ---------- music ----------
   uint32_t rnd() {
@@ -153,10 +149,10 @@ struct spiegel_12 : panel_t {
   }
 
   int deg2midi(int d, int base, int oct) {
-    int l = scale_len(mode);
+    int l = scale_num_notes(scale);
     int o = d >= 0 ? d / l : -((-d + l - 1) / l);
     int m = d - o * l;
-    return base + (trn12 - 12) + oct * 12 + o * 12 + scale_note(mode, m);
+    return base + (trn12 - 12) + oct * 12 + o * 12 + degree_to_note(m, scale);
   }
 
   int voice_deg(int v, int c, int ry) {
@@ -365,15 +361,16 @@ struct spiegel_12 : panel_t {
     last_fine = fine;
     for (int v = 0; v < NV; ++v)
       if (v_on[v]) {
+        uint8_t ch = get_midi_channel_for_preset_idx(0, true);
         send_voice(v, false); // continuous vibrato / tremolo / filter / delay
-        declare_midi_note((uint8_t)v, v_note_q8[v] >> 8, v_vel[v]);
+        declare_midi_note(ch, v_note_q8[v] >> 8, v_vel[v]);
       }
     send_declared_midi_notes();
   }
 
   // ---------- drawing ----------
   void draw_field() {
-    int l = scale_len(mode);
+    int l = scale_num_notes(scale);
     int c0 = -1, r0 = -1;
     if (cm >= 0) {
       c0 = cm % FW;
@@ -422,9 +419,17 @@ struct spiegel_12 : panel_t {
     const uint32_t sound_col = LED_RGB(31, 0, 22); // magenta: a warmer sibling of the PINK Edit-sound pad
     for (int i = 0; i < 4; ++i)
       // row 6 touches the Delay/Random pressure pads (row 5): not isolated, so it still reacts while they are held
-      if (tap(i, 6, ORANGE, mode == i, mode_help[i], NOT_ISOLATED)) mode = (uint8_t)i;
+      if (tap(i, 6, ORANGE, mode == i, mode_help[i], NOT_ISOLATED)) {
+        mode = (uint8_t)i;
+        scale = scale_masks[mode] & 0x0fff;
+        PublishMusicalState();
+      }
     for (int i = 0; i < 2; ++i)
-      if (tap(i, 7, ORANGE, mode == 4 + i, mode_help[4 + i])) mode = (uint8_t)(4 + i);
+      if (tap(i, 7, ORANGE, mode == 4 + i, mode_help[4 + i])){
+        mode = (uint8_t)(4 + i);
+        scale = scale_masks[mode] & 0x0fff;
+        PublishMusicalState();
+      } 
     if (tap(2, 7, GREEN, !contrary, "Parallel motion")) contrary = 0;
     if (tap(3, 7, GREEN, contrary, "Contrary motion")) contrary = 1;
     for (int i = 0; i < 4; ++i)
@@ -439,8 +444,14 @@ struct spiegel_12 : panel_t {
     if (button(3, 12, fade_col(WHITE, 50 + qi * 50), ISOLATED, qhelp[qi])) qi = (uint8_t)((qi + 1) % 2);
     if (tap(0, 13, BLUE, false, "Interval -")) interval = (uint8_t)maxi(1, interval - 1);
     if (tap(1, 13, BLUE, false, "Interval +")) interval = (uint8_t)mini(7, interval + 1);
-    if (tap(2, 13, PURPLE, false, "Transpose -")) trn12 = (uint8_t)maxi(0, trn12 - 1);
-    if (tap(3, 13, PURPLE, false, "Transpose +")) trn12 = (uint8_t)mini(24, trn12 + 1);
+    if (tap(2, 13, PURPLE, false, "Transpose -")) {
+      trn12 = (uint8_t)maxi(0, trn12 - 1);
+      PublishMusicalState();
+    }
+    if (tap(3, 13, PURPLE, false, "Transpose +")) {
+      trn12 = (uint8_t)mini(24, trn12 + 1);
+      PublishMusicalState();
+    }
     if (tap(0, 14, BLUE, xo2 < 2, "X octave -")) xo2 = (uint8_t)maxi(0, xo2 - 1);
     if (tap(1, 14, BLUE, xo2 > 2, "X octave +")) xo2 = (uint8_t)mini(4, xo2 + 1);
     if (tap(2, 14, GREEN, yo2 < 2, "Y octave -")) yo2 = (uint8_t)maxi(0, yo2 - 1);
@@ -453,6 +464,32 @@ struct spiegel_12 : panel_t {
     if (button(3, 15, DIMMEST(PINK), ISOLATED, "Edit sound")) page = PAGE_EDIT;
   }
 
+  static inline uint8_t harmonic_key_midi_note(int note) {
+    int pc = note % 12;
+    return (uint8_t)(60 + (pc < 0 ? pc + 12 : pc));
+  }
+
+  void PublishMusicalState(void) {
+    uint8_t key = harmonic_key_midi_note(trn12);
+    set_current_key_and_scale(key, scale);
+    Chord_t Chord = chord_empty;
+    uint32_t ChordNotes = 0;
+    uint8_t voicing[NV] = {};
+    int midi_note = v_note_q8[0] >> 8;
+    int root = midi_note == 0 ? key % 12 : midi_note % 12;
+    Chord.setRoot(root);
+    Chord.setScale(scale);
+    for (int v = 0; v < NV; ++v) {
+      midi_note = v_note_q8[v] >> 8;
+      voicing[v] = midi_note;
+      Chord.C[v] = midi_note;
+      ChordNotes |= 1 << ((60+midi_note-root)%12);
+    }
+    uint16_t cnotes = ChordNotes == 0 ? scale : ChordNotes;
+    uint32_t cscale = (scale + (scale << 12)) >> (root+trn12)%12;
+    set_current_chord_state(root, cnotes & 0x0fffu, cscale & 0x0fffu);
+    set_current_voicing(voicing, NV);
+  } 
 
   // Displays notes which are currently playing on second screen
   // https://plinky12.com/second_screen_app.html
@@ -478,6 +515,7 @@ struct spiegel_12 : panel_t {
     if (notehash != notehash_last) {
       notehash_last = notehash;
       set_help_text(buf);
+      PublishMusicalState();
     }
   }  
 
@@ -544,6 +582,7 @@ bool spiegel_12::on_serialise(serialiser_t &s, int version) {
   (void)version;
   bool ok = serialise(s, *this);
   if (ok && s.reading) {
+    scale = scale_masks[mode];
     finger = cm = -1;
     need_release = true;
   }
