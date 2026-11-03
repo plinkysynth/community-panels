@@ -553,18 +553,20 @@ struct spiegel_12 : panel_t {
     set_current_voicing(voicing, NV);
   }
 
-  /* void PublishMusicalState(void) {
+  /*   
+  // this is a less verbose (and also less accurate) 
+  // version of PublishMusicalState
+  
+  void PublishMusicalState(void) {
     uint8_t key = harmonic_key_midi_note(trn12);
     set_current_key_and_scale(key, scale);
+    set_current_chord_state(key, scale & 0x0fffu, scale & 0x0fffu);
     uint32_t ChordNotes = 0;
     uint8_t voicing[NV] = {};
     for (int v = 0; v < NV; ++v) {
       uint8_t midi_note = v_note_q8[v] >> 8;
       voicing[v] = midi_note;
-      ChordNotes |= 1 << (midi_note%12);
     }
-    uint16_t cnotes = ChordNotes == 0 ? scale : ChordNotes;
-    set_current_chord_state(key, cnotes & 0x0fffu, scale & 0x0fffu);
     set_current_voicing(voicing, NV);
   } */
 
