@@ -1,5 +1,7 @@
 # ARCADE12
 
+See it in action: https://www.instagram.com/reel/DfKoD-MMp0r/?srtk=MXhuZHg5YWU1MmFuZA==
+
 Two games that write their own soundtrack, one cartridge slot on Plinky 12. Pick a game, play, and the music follows every move.
 
 - **Selector:** both games run as silent demos, CHOOSE GAME rolls between them. Tap the left demo for KLOTZ, the right one for PRALL.
