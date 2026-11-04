@@ -112,7 +112,7 @@ struct spiegel_12 : panel_t {
   uint32_t observed_musical_state; // used to sync scale and key with other panels^
 
   // ---- panel settings (global, saved via on_serialise_settings) ----
-  uint8_t harmonic_follow = HARMONIC_FOLLOW_CHORD_SCALE;
+  uint8_t harmonic_follow = HARMONIC_FOLLOW_KEY;
   bool settings_changed = false;
 
   enum {
@@ -496,10 +496,10 @@ struct spiegel_12 : panel_t {
   }
 
   void draw_settings(int page) {
-    static const char *const FOLLOW_NAMES[HARMONIC_FOLLOW_LAST] = {"off", "key", "chrd", "cscl"};
+    static const char *const FOLLOW_NAMES[HARMONIC_FOLLOW_LAST] = {"off", "key"};
     if (page == -1) {
       // Options how to interpret incoming harmonic state
-      if (change_setting(harmonic_follow, draw_system_style_enum_settings_page("follow", harmonic_follow, FOLLOW_NAMES, HARMONIC_FOLLOW_LAST), HARMONIC_FOLLOW_CHORD_SCALE)) {
+      if (change_setting(harmonic_follow, draw_system_style_enum_settings_page("follow", harmonic_follow, FOLLOW_NAMES, HARMONIC_FOLLOW_LAST), HARMONIC_FOLLOW_KEY)) {
         if(harmonic_follow != HARMONIC_FOLLOW_IGNORE) 
           observed_musical_state = 0; // force reevaluation
         read_harmonic_state_changes();
@@ -581,7 +581,7 @@ struct spiegel_12 : panel_t {
     bool acc = KeyToAccidental[0][root];    
   
     for (int v = 0; v < NV; ++v) {
-      if (v_vel[v] > 16) {
+      if (v_on[v]) {
         int midi_note = v_note_q8[v] >> 8;
         notehash = notehash * 7537 + midi_note;
         if (charpos) buf[charpos++] = ' ';

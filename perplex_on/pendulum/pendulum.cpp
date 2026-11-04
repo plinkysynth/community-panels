@@ -112,7 +112,12 @@ struct pendulum : panel_t {
   int notehash_last; // for display purposes
   uint8_t key; 
   uint16_t scale;
-  uint32_t observed_musical_state; // used to sync scale and key with other panels^
+  uint32_t observed_musical_state; // used to sync scale and key with other panels
+  uint32_t published_generation; // the generation right after own last publish
+  bool external_harmony; // tru if external state has arrived.
+  uint8_t ext_chord_root;
+  uint16_t ext_chord_notes;
+  uint16_t ext_chord_scale;
   uint8_t harmonic_follow;
 
   enum {
@@ -177,7 +182,7 @@ struct pendulum : panel_t {
 
   // Guard against invalid key/scale at boot (both boot paths call this).
   void ensure_harmony() {
-    bool bad_key = key > 127;
+    bool bad_key = key < 12 || key > 127;
     bool bad_scale = (scale & 0x0fff) == 0;
     if (bad_key || bad_scale) {
       key = bad_key ? harmonic_key_midi_note(0) : key;
@@ -680,6 +685,7 @@ struct pendulum : panel_t {
   }
 
   void draw_settings_page(int page) {
+    on_sequence_lock_guard_t guard;
     if (page == -1) {
       static const char *const names[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
       int pc = key % 12;
@@ -770,12 +776,21 @@ struct pendulum : panel_t {
     observed_musical_state = get_current_musical_state_generation();
     // follow key
     if(harmonic_follow == HARMONIC_FOLLOW_IGNORE) {
+      external_harmony = false;
       return;
-    } else if(harmonic_follow == HARMONIC_FOLLOW_KEY) {
+    }
+
+    external_harmony = (current_chord_notes & 0x0fff) != 0; 
+    ext_chord_root = current_chord_root; 
+    ext_chord_notes = current_chord_notes & 0x0fff;
+    ext_chord_scale = current_chord_scale & 0x0fff;
+
+    if(harmonic_follow == HARMONIC_FOLLOW_KEY) {
       if (harmonic_key_midi_note(key) != current_key || (scale & 0x0fffu) != (current_scale & 0x0fffu)) {
         // apply harmonic follow state
         key = current_key;
         scale = current_scale & 0x0fffu;
+        PublishMusicalState();
       }
     } else if(harmonic_follow == HARMONIC_FOLLOW_CHORD_SCALE) {
       // follow chord
@@ -783,6 +798,7 @@ struct pendulum : panel_t {
         // apply harmonic follow state
         key = current_chord_root;
         scale = current_chord_scale & 0x0fffu;
+        PublishMusicalState();
       }
     } else if(harmonic_follow == HARMONIC_FOLLOW_CHORD_NOTES) {
       // follow chord
@@ -790,25 +806,40 @@ struct pendulum : panel_t {
         // apply harmonic follow state
         key = current_chord_root;
         scale = current_chord_notes & 0x0fffu;
+        PublishMusicalState();
       }
     }
   } 
 
   void PublishMusicalState(void) {
     set_current_key_and_scale(key, scale);
-    set_current_chord_state(key, scale & 0x0fffu, scale & 0x0fffu);
     uint8_t voicing[CURRENT_VOICING_MAX_NOTES] = {};
-    for (int i = 0; i < CHORD_NUM_VOICES; ++i) {
-      voicing[i] = degree_to_note(i, scale);;
+    if (!external_harmony || harmonic_follow == HARMONIC_FOLLOW_IGNORE) {
+      set_current_chord_state(key, scale & 0x0fffu, scale & 0x0fffu);
+      // publish harmony from internal settings
+      int n = mini(scale_num_notes(scale & 0x0fffu), CURRENT_VOICING_MAX_NOTES);
+      for (int i = 0; i < n; ++i) {
+        voicing[i] = (uint8_t)clampi(key + degree_to_note(i, scale & 0x0fffu), 1, 127);
+      }
+    } else {
+      set_current_chord_state(ext_chord_root, ext_chord_notes & 0x0fffu, ext_chord_scale & 0x0fffu);
+      // receive harmony from external settings
+      int n = 0;
+      for (int semi = 0; semi < 12 && n < CURRENT_VOICING_MAX_NOTES; ++semi) {
+        if (ext_chord_notes & (1u << semi)) {
+          voicing[n++] = (uint8_t)clampi(ext_chord_root + semi, 1, 127);
+        }
+      }
     }
     set_current_voicing(voicing, CURRENT_VOICING_MAX_NOTES);
+    published_generation = observed_musical_state = get_current_musical_state_generation();
   } 
 
   // Displays notes which are currently playing on second screen
   // https://plinky12.com/second_screen_app.html
   void ShowNoteHelpText() {
     int notehash = 0;
-    char buf[64];
+    char buf[81]; // 16 x (name + space) + terminator = 81
     int charpos = 0;
 
     int root = key % 12;
