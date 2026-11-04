@@ -5,10 +5,11 @@
 @Preferred Panels: blocks
 @Tags: game, stack, breakout, generative, sequencer, sonification, midi
 @Description: Two games that write their own soundtrack, one cartridge slot.
-  SELECTOR: both games run as silent demos, CHOOSE GAME rolls between them.
-  Tap the left demo for KLOTZ, the right one for PRALL. The lettering is not
-  a button. Bottom-right pad in a game: tap = play / pause, hold 0.7 s = back
-  to the selector. A run in progress waits there, paused.
+  SELECTOR: both games run as silent demos, SELECT GAME rolls between them.
+  Tap the left demo for KLOTZ, the right one for PRALL (an arcade start
+  jingle plays). The lettering is not a button. Bottom-right pad in a game:
+  tap = play / pause, hold 0.7 s = back to the selector. A run in progress
+  waits there, paused.
   KLOTZ (falling blocks): swipe left / right moves the stone, swipe down drops
   it on the next 16th, tap rotates. The stack is a 10-step sequencer against
   the 16-step bar, landing strums a chord, cleared lines move the harmony,
@@ -2626,6 +2627,27 @@ struct arcade_12 : panel_t {
     }
   }
 
+  // arcade start jingle on a fresh run: a rising run in the game's own voices, then a held chord
+  void start_fanfare(int g) {
+    if (g == G_PRALL) {
+      int s16 = 2 * prall.tick_us();
+      for (int i = 0; i < 5; ++i) prall.voice_note(prall_game::P_LEAD, prall.chord_tone(i + 2, prall_game::P_LEAD), 96, i * s16, 110);
+      int t = 5 * s16;
+      prall.voice_note(prall_game::P_PAD, prall.chord_tone(0, prall_game::P_PAD), 80, t, 900);
+      prall.voice_note(prall_game::P_PAD, prall.chord_tone(2, prall_game::P_PAD), 76, t, 900);
+      prall.voice_note(prall_game::P_LEAD, prall.chord_tone(7, prall_game::P_LEAD), 110, t, 500);
+      prall.kick(100, t);
+    } else {
+      int s16 = qn_period_us / 4;
+      for (int i = 0; i < 5; ++i) klotz.play_stone(2, klotz.chord_tone(i) + 12, 96, i * s16, 110);
+      int t = 5 * s16;
+      klotz.play_stone(0, klotz.chord_tone(0), 80, t, 900);
+      klotz.play_stone(0, klotz.chord_tone(2), 76, t, 900);
+      klotz.play_stone(3, klotz.chord_tone(5) + 12, 110, t, 500);
+      klotz.kick(100, t);
+    }
+  }
+
   void enter_game(int g) {
     silence_current();
     if (g != cur) {
@@ -2634,10 +2656,14 @@ struct arcade_12 : panel_t {
     }
     in_menu = false;
     pad_held = pad_hold_fired = false;
+    // a fresh run gets the start jingle, a resumed one just waits paused
+    bool fresh = g == G_PRALL ? (prall.state == prall_game::ST_IDLE || prall.state == prall_game::ST_OVER)
+                              : klotz.state != klotz_game::ST_PLAY;
     if (g == G_PRALL)
       prall.enter();
     else
       klotz.enter();
+    if (fresh) start_fanfare(g);
     last_state[g] = state_of(g);
   }
 
@@ -2839,15 +2865,11 @@ struct arcade_12 : panel_t {
   // 4x5 letters, row-major
   static const char *coin_glyph(char c) {
     switch (c) {
-    case 'I': return "11110110011001101111";
-    case 'N': return "10011101101110011001";
     case 'S': return "01111000011000011110";
     case 'E': return "11111000111010001111";
-    case 'R': return "11101001111010101001";
-    case 'T': return "11110110011001100110";
+    case 'L': return "10001000100010001111";
     case 'C': return "01111000100010000111";
-    case 'O': return "01101001100110010110";
-    case 'H': return "10011001111110011001";
+    case 'T': return "11110110011001100110";
     case 'G': return "01111000101110010111";
     case 'A': return "01101001111110011001";
     case 'M': return "10011111111110011001";
@@ -2855,9 +2877,9 @@ struct arcade_12 : panel_t {
     }
   }
 
-  // CHOOSE GAME: upright letters stacked in the middle four columns, rolling upward
+  // SELECT GAME: upright letters stacked in the middle four columns, rolling upward
   void draw_coin() {
-    static const char TXT[] = "CHOOSE GAME ";
+    static const char TXT[] = "SELECT GAME ";
     const int n = 12, stride = 6, total = n * stride;
     int off = (int)((time_us() / 110000u) % (uint32_t)total);
     uint32_t col = klotz_game::lc(1, 235, 70);
