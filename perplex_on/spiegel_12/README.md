@@ -51,3 +51,9 @@ An interpretation of Laurie Spiegel's Music Mouse for Plinky 12. Your finger is 
 - Output: internal synth (4 voices)
 
 The panel page lists the firmware revision and build date for the current download.
+
+## Harmonic follow and second screen
+
+The Follow setting offers **off** and **key**. Key follows the shared song root and scale; Spiegel generates and publishes its own chord and voicing without replacing that song key. Local mode/transpose edits deliberately publish a new key/scale.
+
+The harmonic display and note-name text hold each voice's last pitch through short note-off gaps, avoiding chord/scale flicker. New notes update the harmonic state even on the sound-edit page while Latch is playing. Resetting or loading a song clears the held pitches. The displayed voicing describes established harmony, not just currently open gates.

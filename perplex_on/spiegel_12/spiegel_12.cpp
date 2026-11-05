@@ -108,17 +108,13 @@ struct spiegel_12 : panel_t {
   int v_note_q8[NV] = {0, 0, 0, 0};
   uint8_t v_vel[NV] = {0, 0, 0, 0};
 
-  int notehash_last; // for display purposes
-  uint32_t observed_musical_state; // used to sync scale and key with other panels // used to sync scale and key with other panels
-  uint32_t published_generation; // the generation right after own last publish
-  bool external_harmony; // true if external state has arrived.
-  uint8_t ext_chord_root;
-  uint16_t ext_chord_notes;
-  uint16_t ext_chord_scale;
+  uint32_t notehash_last = 0; // for display purposes
+  uint32_t observed_musical_state = 0; // Includes both received changes and our own publications.
   uint8_t harmonic_follow = HARMONIC_FOLLOW_KEY;
 
   // ---- panel settings (global, saved via on_serialise_settings) ----
   bool settings_changed = false;
+  bool harmony_dirty = false; // New notes require publication even when the play page is hidden.
 
   enum {
     HARMONIC_FOLLOW_IGNORE,
@@ -159,10 +155,12 @@ struct spiegel_12 : panel_t {
     finger = cm = -1;
     inited = false;
     need_release = true;
+    clear_held_harmony();
     PublishMusicalState();
   }
 
   void on_load_finished() override {
+    clear_held_harmony();
     PublishMusicalState();
   }  
 
@@ -237,6 +235,7 @@ struct spiegel_12 : panel_t {
 
   void fire(int v, int midi, int vel, int gate, uint32_t f) {
     v_note_q8[v] = midi << 8;
+    harmony_dirty = true;
     v_vel[v] = (uint8_t)clampi(vel, 1, 127);
     v_on[v] = true;
     v_off_at[v] = f + (uint32_t)maxi(1, gate);
@@ -373,6 +372,7 @@ struct spiegel_12 : panel_t {
       if (cm >= 0 || v_on[0] || v_on[1] || v_on[2] || v_on[3]) release_all();
       cm = -1;
       last_fine = fine;
+      if (harmony_dirty) PublishMusicalState(false);
       return;
     }
     // Resynchronise after clock wrap/rewind instead of scheduling gates on the old timeline.
@@ -394,6 +394,7 @@ struct spiegel_12 : panel_t {
         declare_midi_note(ch, v_note_q8[v] >> 8, v_vel[v]);
       }
     send_declared_midi_notes();
+    if (harmony_dirty) PublishMusicalState(false);
   }
 
   // ---------- drawing ----------
@@ -509,9 +510,9 @@ struct spiegel_12 : panel_t {
       // Options how to interpret incoming harmonic state
       if (change_setting(harmonic_follow, draw_system_style_enum_settings_page("follow", harmonic_follow, FOLLOW_NAMES, HARMONIC_FOLLOW_LAST), HARMONIC_FOLLOW_KEY)) {
         if(harmonic_follow != HARMONIC_FOLLOW_IGNORE) 
-          observed_musical_state = 0; // force reevaluation
+          observed_musical_state = get_current_musical_state_generation() - 1; // force reevaluation
         read_harmonic_state_changes();
-        PublishMusicalState();
+        if (harmonic_follow == HARMONIC_FOLLOW_IGNORE) PublishMusicalState();
       }
     }
   }
@@ -523,82 +524,56 @@ struct spiegel_12 : panel_t {
 
   void read_harmonic_state_changes(void) {
     uint32_t generation = get_current_musical_state_generation();
-    if (observed_musical_state == generation)
-      return;
+    if (observed_musical_state == generation) return;
     observed_musical_state = generation;
-    // follow key
-    if(harmonic_follow == HARMONIC_FOLLOW_IGNORE) {
-      external_harmony = false;
-      return;
-    }
-
-    external_harmony = (current_chord_notes & 0x0fff) != 0; 
-    ext_chord_root = current_chord_root; 
-    ext_chord_notes = current_chord_notes & 0x0fff;
-    ext_chord_scale = current_chord_scale & 0x0fff;
-    
-    uint16_t ext_scale = current_scale & 0x0fffu;
-    if(harmonic_follow == HARMONIC_FOLLOW_KEY) {
-      if (ext_scale && (harmonic_key_midi_note(trn12) != harmonic_key_midi_note(current_key) || (scale & 0x0fffu) != ext_scale)) {
-        // apply harmonic follow state
-        int root = current_key % 12;
-        trn12 = root < 6 ? root + 12 : root;
-        scale = ext_scale;
-        PublishMusicalState();
-      }
-    }
-  } 
-
-  void PublishMusicalState(void) {
-    uint8_t key = harmonic_key_midi_note(trn12);
-    set_current_key_and_scale(key, scale);
-    uint32_t ChordNotes = 0;
-    uint8_t voicing[CURRENT_VOICING_MAX_NOTES] = {};
-
-    
-    int midi_note = v_note_q8[0] >> 8;
-    int root = midi_note == 0 ? key % 12 : midi_note % 12;
-    for (int v = 0; v < NV; ++v) {
-      midi_note = v_note_q8[v] >> 8;
-      if (midi_note == 0) // ommiting check for !v_on[v] to make second_screen more legible
-        continue;
-      voicing[v] = midi_note;
-      ChordNotes |= 1 << ((60+midi_note-root)%12);
-    }
-    uint16_t cnotes = ChordNotes == 0 ? scale : ChordNotes;
-    uint32_t cscale = (scale + (scale << 12)) >> ((root - trn12 % 12 + 12) % 12);
-    set_current_voicing(voicing, NV);
-
-    if (!external_harmony || harmonic_follow == HARMONIC_FOLLOW_IGNORE) {
-      set_current_chord_state(harmonic_key_midi_note(root), cnotes & 0x0fffu, cscale & 0x0fffu);
-    } else {
-      set_current_chord_state(harmonic_key_midi_note(ext_chord_root), ext_chord_notes & 0x0fffu, ext_chord_scale & 0x0fffu);
-    }
-    published_generation = observed_musical_state = get_current_musical_state_generation();
+    if (harmonic_follow == HARMONIC_FOLLOW_IGNORE) return;
+    uint16_t incoming_scale = current_scale & 0x0fffu;
+    if (!incoming_scale) return;
+    if (harmonic_key_midi_note(trn12) == harmonic_key_midi_note(current_key) && scale == incoming_scale) return;
+    int root = current_key % 12;
+    trn12 = root < 6 ? root + 12 : root;
+    scale = incoming_scale;
+    // Follow the song key locally; our own generated chord remains independent.
+    harmony_dirty = true;
   }
 
-  /*   
-  // this is a less verbose (and also less accurate) 
-  // version of PublishMusicalState
-  
-  void PublishMusicalState(void) {
-    uint8_t key = harmonic_key_midi_note(trn12);
-    set_current_key_and_scale(key, scale);
-    set_current_chord_state(key, scale & 0x0fffu, scale & 0x0fffu);
-    uint32_t ChordNotes = 0;
-    uint8_t voicing[NV] = {};
-    for (int v = 0; v < NV; ++v) {
-      uint8_t midi_note = v_note_q8[v] >> 8;
-      voicing[v] = midi_note;
-    }
-    set_current_voicing(voicing, NV);
-  } */
+  void clear_held_harmony() {
+    memset(v_note_q8, 0, sizeof(v_note_q8));
+    memset(v_vel, 0, sizeof(v_vel));
+    memset(v_on, 0, sizeof(v_on));
+    harmony_dirty = false;
+    notehash_last = ~0u; // Clear the note-name text on the next play-page draw.
+  }
 
-  // Displays notes which are currently playing on second screen
+  void PublishMusicalState(bool publish_key = true) {
+    uint8_t key = harmonic_key_midi_note(trn12);
+    if (publish_key) set_current_key_and_scale(key, scale);
+    uint16_t absolute_notes = 0;
+    uint8_t voicing[CURRENT_VOICING_MAX_NOTES] = {};
+    int count = 0;
+    int root = key % 12;
+    // Hold each voice's last pitch through note-offs. This intentionally describes
+    // established harmony rather than the instantaneous gate state. Reset/load clears it.
+    for (int v = 0; v < NV; ++v) {
+      int midi_note = v_note_q8[v] >> 8;
+      if (midi_note <= 0 || midi_note > 127) continue;
+      if (!count) root = midi_note % 12;
+      voicing[count++] = (uint8_t)midi_note; // no zero holes in a terminated voicing
+      absolute_notes |= 1u << (midi_note % 12);
+    }
+    uint16_t chord_notes = count ? scale_rotate(absolute_notes, -root) : scale;
+    uint16_t chord_scale = scale_rotate(scale, key % 12 - root);
+    set_current_chord_state(harmonic_key_midi_note(root), chord_notes, chord_scale);
+    set_current_voicing(voicing, count);
+    harmony_dirty = false;
+    observed_musical_state = get_current_musical_state_generation();
+  }
+
+  // Show the same held pitches as the harmonic display, without note-off flicker.
   // https://plinky12.com/second_screen_app.html
   void ShowNoteHelpText() {
     on_sequence_lock_guard_t guard;
-    int notehash = 0;
+    uint32_t notehash = 0;
     char buf[64];
     int charpos = 0;
 
@@ -606,7 +581,7 @@ struct spiegel_12 : panel_t {
     bool acc = KeyToAccidental[0][root];    
   
     for (int v = 0; v < NV; ++v) {
-      if (v_on[v]) {
+      if (v_note_q8[v] > 0) {
         int midi_note = v_note_q8[v] >> 8;
         notehash = notehash * 7537 + midi_note;
         if (charpos) buf[charpos++] = ' ';
@@ -619,7 +594,6 @@ struct spiegel_12 : panel_t {
     if (notehash != notehash_last) {
       notehash_last = notehash;
       set_help_text(buf);
-      PublishMusicalState();
     }
   }  
 

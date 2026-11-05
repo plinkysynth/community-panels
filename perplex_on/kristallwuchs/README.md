@@ -15,3 +15,9 @@ See it in action: https://www.instagram.com/reel/Ddo3G4rCksZ/?stkn=ajlnaTB4YjJzd
 - **Pages:** Play / Sound / Save-Load.
 
 Author: PERPLEX ON · Firmware: beta · Preferred panel: blocks
+
+## Harmonic follow and second screen
+
+The Follow setting offers **off**, **key** (song root/scale), **chrd** (chord root/notes), and **cscl** (chord root/scale). Following changes Kristallwuchs's local pitch mapping; it preserves the sender's song key, chord and exact voicing. An empty incoming mask retains the last playable local scale.
+
+Local root/scale edits deliberately publish new harmony. Note-name text holds the last note per voice slot through short gate gaps rather than flashing blank on each note-off.

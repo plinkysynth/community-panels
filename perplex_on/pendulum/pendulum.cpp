@@ -109,16 +109,11 @@ struct pendulum : panel_t {
   uint8_t damp = 3;  // 0..8, 0 = off (endless, no slowdown), higher = faster energy decay
   uint8_t speed_mode = 0; // 0 = swipe speed (default), 1 = swipe distance from the launch edge to mid-grid
   bool settings_changed = false;
-  int notehash_last; // for display purposes
-  uint8_t key; 
-  uint16_t scale;
-  uint32_t observed_musical_state; // used to sync scale and key with other panels
-  uint32_t published_generation; // the generation right after own last publish
-  bool external_harmony; // tru if external state has arrived.
-  uint8_t ext_chord_root;
-  uint16_t ext_chord_notes;
-  uint16_t ext_chord_scale;
-  uint8_t harmonic_follow;
+  uint32_t notehash_last = 0; // for display purposes
+  uint8_t key = 60;
+  uint16_t scale = SCALE_MAJOR;
+  uint32_t observed_musical_state = 0; // Includes both received changes and our own publications.
+  uint8_t harmonic_follow = HARMONIC_FOLLOW_CHORD_NOTES;
 
   enum {
     HARMONIC_FOLLOW_IGNORE,
@@ -182,12 +177,11 @@ struct pendulum : panel_t {
 
   // Guard against invalid key/scale at boot (both boot paths call this).
   void ensure_harmony() {
-    bool bad_key = key < 12 || key > 127;
+    bool bad_key = key > 127;
     bool bad_scale = (scale & 0x0fff) == 0;
     if (bad_key || bad_scale) {
       key = bad_key ? harmonic_key_midi_note(0) : key;
       scale = bad_scale ? SCALE_MAJOR : scale;
-      PublishMusicalState();
     }
   }
 
@@ -225,10 +219,7 @@ struct pendulum : panel_t {
     last_tap_time = 0;
     memset(&voice_allocator, 0, sizeof(voice_allocator));
     memset(&div, 0, sizeof(div));
-    oct = 0;
-    damp = 3;
-    speed_mode = 0;
-    harmonic_follow = HARMONIC_FOLLOW_CHORD_NOTES;
+    // Panel preferences were loaded before this song-reset hook.
     ensure_harmony();
     PublishMusicalState();
   }
@@ -755,10 +746,10 @@ struct pendulum : panel_t {
       if (delta) {
         harmonic_follow = (uint8_t)clampi((int)harmonic_follow + delta, HARMONIC_FOLLOW_IGNORE, HARMONIC_FOLLOW_CHORD_SCALE);
         if(harmonic_follow != HARMONIC_FOLLOW_IGNORE) 
-          observed_musical_state = 0; // force reevaluation
+          observed_musical_state = get_current_musical_state_generation() - 1; // force reevaluation
         read_harmonic_state_changes();
         ensure_harmony();
-        PublishMusicalState();
+        if (harmonic_follow == HARMONIC_FOLLOW_IGNORE) PublishMusicalState();
         settings_changed = true;
       }
     } 
@@ -771,74 +762,39 @@ struct pendulum : panel_t {
 
   void read_harmonic_state_changes(void) {
     uint32_t generation = get_current_musical_state_generation();
-    if (observed_musical_state == generation)
-      return;
-    observed_musical_state = get_current_musical_state_generation();
-    // follow key
-    if(harmonic_follow == HARMONIC_FOLLOW_IGNORE) {
-      external_harmony = false;
-      return;
-    }
+    if (observed_musical_state == generation) return;
+    observed_musical_state = generation;
+    if (harmonic_follow == HARMONIC_FOLLOW_IGNORE) return;
+    uint8_t incoming_root = harmonic_follow == HARMONIC_FOLLOW_KEY ? current_key : current_chord_root;
+    uint16_t incoming_scale = harmonic_follow == HARMONIC_FOLLOW_KEY ? current_scale :
+        (harmonic_follow == HARMONIC_FOLLOW_CHORD_SCALE ? current_chord_scale : current_chord_notes);
+    incoming_scale &= 0x0fffu;
+    // Keep the last playable harmony through empty incoming chord/gate gaps.
+    if (!incoming_scale) return;
+    key = incoming_root;
+    scale = incoming_scale;
+    // Following changes local pitch mapping only. Preserve the shared song key,
+    // chord and exact incoming voicing (including its inversion and octaves).
+  }
 
-    external_harmony = (current_chord_notes & 0x0fff) != 0; 
-    ext_chord_root = current_chord_root; 
-    ext_chord_notes = current_chord_notes & 0x0fff;
-    ext_chord_scale = current_chord_scale & 0x0fff;
-
-    if(harmonic_follow == HARMONIC_FOLLOW_KEY) {
-      if (harmonic_key_midi_note(key) != current_key || (scale & 0x0fffu) != (current_scale & 0x0fffu)) {
-        // apply harmonic follow state
-        key = current_key;
-        scale = current_scale & 0x0fffu;
-        PublishMusicalState();
-      }
-    } else if(harmonic_follow == HARMONIC_FOLLOW_CHORD_SCALE) {
-      // follow chord
-      if (harmonic_key_midi_note(key) != current_chord_root || (scale & 0x0fffu) != (current_chord_scale & 0x0fffu)) {
-        // apply harmonic follow state
-        key = current_chord_root;
-        scale = current_chord_scale & 0x0fffu;
-        PublishMusicalState();
-      }
-    } else if(harmonic_follow == HARMONIC_FOLLOW_CHORD_NOTES) {
-      // follow chord
-      if (harmonic_key_midi_note(key) != current_chord_root || (scale & 0x0fffu) != (current_chord_notes & 0x0fffu)) {
-        // apply harmonic follow state
-        key = current_chord_root;
-        scale = current_chord_notes & 0x0fffu;
-        PublishMusicalState();
-      }
-    }
-  } 
-
+  // Called only for locally authored settings and initial/reset state, never as
+  // an echo of incoming harmony. These scale voicings are held through gate gaps.
   void PublishMusicalState(void) {
     set_current_key_and_scale(key, scale);
+    set_current_chord_state(key, scale & 0x0fffu, scale & 0x0fffu);
     uint8_t voicing[CURRENT_VOICING_MAX_NOTES] = {};
-    if (!external_harmony || harmonic_follow == HARMONIC_FOLLOW_IGNORE) {
-      set_current_chord_state(key, scale & 0x0fffu, scale & 0x0fffu);
-      // publish harmony from internal settings
-      int n = mini(scale_num_notes(scale & 0x0fffu), CURRENT_VOICING_MAX_NOTES);
-      for (int i = 0; i < n; ++i) {
-        voicing[i] = (uint8_t)clampi(key + degree_to_note(i, scale & 0x0fffu), 1, 127);
-      }
-    } else {
-      set_current_chord_state(ext_chord_root, ext_chord_notes & 0x0fffu, ext_chord_scale & 0x0fffu);
-      // receive harmony from external settings
-      int n = 0;
-      for (int semi = 0; semi < 12 && n < CURRENT_VOICING_MAX_NOTES; ++semi) {
-        if (ext_chord_notes & (1u << semi)) {
-          voicing[n++] = (uint8_t)clampi(ext_chord_root + semi, 1, 127);
-        }
-      }
-    }
-    set_current_voicing(voicing, CURRENT_VOICING_MAX_NOTES);
-    published_generation = observed_musical_state = get_current_musical_state_generation();
-  } 
+    int n = mini(scale_num_notes(scale & 0x0fffu), CURRENT_VOICING_MAX_NOTES);
+    for (int i = 0; i < n; ++i)
+      voicing[i] = (uint8_t)clampi(harmonic_key_midi_note(key) + degree_to_note(i, scale), 1, 127);
+    set_current_voicing(voicing, n);
+    observed_musical_state = get_current_musical_state_generation();
+  }
 
-  // Displays notes which are currently playing on second screen
+  // Show the last note per lane/slot through gate gaps, avoiding second-screen flicker.
   // https://plinky12.com/second_screen_app.html
   void ShowNoteHelpText() {
-    int notehash = 0;
+    on_sequence_lock_guard_t guard;
+    uint32_t notehash = 0;
     char buf[81]; // 16 x (name + space) + terminator = 81
     int charpos = 0;
 
