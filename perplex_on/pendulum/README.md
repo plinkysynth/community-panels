@@ -46,3 +46,9 @@ Scroll left from the play page for the settings:
 The Follow setting offers **off**, **key** (song root/scale), **chrd** (chord root/notes), and **cscl** (chord root/scale). Following changes Pendulum's local pitch mapping; it preserves the sender's song key, chord and exact voicing. An empty incoming mask retains the last playable local scale. Follow and the other panel preferences survive default-song startup.
 
 Local key/scale edits deliberately publish new harmony. Note-name text holds the last note per lane through short gate gaps rather than flashing blank on each note-off.
+
+When following chord-only MIDI, the second screen discards the panel's old local
+scale voicing after the chord changes and displays a representative chord instead.
+This avoids a stale note stack/slash bass without transmitting extra MIDI. It does
+not recover the sender's exact octaves or inversion. A later voicing publication is
+preserved, even if its notes are identical to the old local array.

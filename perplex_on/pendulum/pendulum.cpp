@@ -113,6 +113,10 @@ struct pendulum : panel_t {
   uint8_t key = 60;
   uint16_t scale = SCALE_MAJOR;
   uint32_t observed_musical_state = 0; // Includes both received changes and our own publications.
+  uint32_t local_voicing_generation = 0;
+  uint8_t local_chord_root = 0;
+  uint16_t local_chord_notes = 0;
+  bool local_voicing_pending = false;
   uint8_t harmonic_follow = HARMONIC_FOLLOW_CHORD_NOTES;
 
   enum {
@@ -765,6 +769,18 @@ struct pendulum : panel_t {
     if (observed_musical_state == generation) return;
     observed_musical_state = generation;
     if (harmonic_follow == HARMONIC_FOLLOW_IGNORE) return;
+    // Chord-only MIDI has no replacement voicing. Retire our own scale
+    // voicing when the chord changes so the second screen uses its chord-mask
+    // fallback, rather than showing a stale stack and slash bass. A later
+    // voicing publication supersedes ours, even if its notes are identical.
+    if (local_voicing_pending) {
+      if (get_current_voicing_generation() != local_voicing_generation) local_voicing_pending = false;
+      else if (current_chord_root != local_chord_root || current_chord_notes != local_chord_notes) {
+        set_current_voicing(nullptr, 0);
+        local_voicing_pending = false;
+        observed_musical_state = get_current_musical_state_generation();
+      }
+    }
     uint8_t incoming_root = harmonic_follow == HARMONIC_FOLLOW_KEY ? current_key : current_chord_root;
     uint16_t incoming_scale = harmonic_follow == HARMONIC_FOLLOW_KEY ? current_scale :
         (harmonic_follow == HARMONIC_FOLLOW_CHORD_SCALE ? current_chord_scale : current_chord_notes);
@@ -773,8 +789,8 @@ struct pendulum : panel_t {
     if (!incoming_scale) return;
     key = incoming_root;
     scale = incoming_scale;
-    // Following changes local pitch mapping only. Preserve the shared song key,
-    // chord and exact incoming voicing (including its inversion and octaves).
+    // Preserve the shared song key/chord and any replacement voicing.
+    // The selected follow mode changes only our local pitch mapping.
   }
 
   // Called only for locally authored settings and initial/reset state, never as
@@ -787,6 +803,10 @@ struct pendulum : panel_t {
     for (int i = 0; i < n; ++i)
       voicing[i] = (uint8_t)clampi(harmonic_key_midi_note(key) + degree_to_note(i, scale), 1, 127);
     set_current_voicing(voicing, n);
+    local_voicing_generation = get_current_voicing_generation();
+    local_chord_root = current_chord_root;
+    local_chord_notes = current_chord_notes;
+    local_voicing_pending = true;
     observed_musical_state = get_current_musical_state_generation();
   }
 
