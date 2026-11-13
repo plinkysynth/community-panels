@@ -3277,9 +3277,6 @@ struct ambiotica : panel_t {
     bool on_serialise(serialiser_t& s, int version) override {
         (void)version;
         ambiotica& o = *this;
-        int pattern_bytes = (int)sizeof(o.pattern);
-        int mod_bytes     = (int)sizeof(o.pattern_mod);
-        int len_bytes     = (int)sizeof(o.drum_len);
         if (s.reading) {
             memset(o.pattern,     0,          sizeof o.pattern);
             memset(o.pattern_mod, 0,          sizeof o.pattern_mod);
@@ -3302,9 +3299,9 @@ struct ambiotica : panel_t {
         FIELD("gravity", o.fx_val15,               0u, 127u);
         FIELD("key",     o.key_pos,                0,  11);
         FIELD("mode",    o.mode_sel,               0,  4);
-        FIELD_BASE64("drums", o.pattern, pattern_bytes, (int)sizeof(o.pattern));
-        FIELD_BASE64("dmod",  o.pattern_mod, mod_bytes, (int)sizeof(o.pattern_mod));
-        FIELD_BASE64("dlen",  o.drum_len, len_bytes, (int)sizeof(o.drum_len));
+        FIELD_BASE64_ARRAY("drums", o.pattern);
+        FIELD_BASE64_ARRAY("dmod", o.pattern_mod);
+        FIELD_BASE64_ARRAY("dlen", o.drum_len);
         FIELD("kit",     o.drum_kit,               -1, 8);
         FIELD("dmute",   o.drum_mute,              0u, 255u);
         FIELD("dtrans", o.drum_transpose,        -24, 24);

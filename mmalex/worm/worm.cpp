@@ -80,8 +80,6 @@ struct worm : panel_t {
   bool on_serialise(serialiser_t &s, int version) override {
     (void)version;
     worm &o = *this;
-    int pad_col_bytes = (int)sizeof(pad_col);
-    int pad_next_bytes = (int)sizeof(pad_next);
     OBJECT_BEGIN(s);
     FIELD_MIX_PRESET("presetMix");
     FIELD("dry", dry_send, 0u, 127u);
@@ -89,8 +87,8 @@ struct worm : panel_t {
     FIELD("reverb", reverb_send, 0u, 127u);
     FIELD("oct", octave_toggle_q7, 0u, 127u);
     FIELD("hue", record_hue, 0u, 15u);
-    FIELD_BASE64("pad_col", pad_col, pad_col_bytes, (int)sizeof(pad_col));
-    FIELD_BASE64("pad_next", pad_next, pad_next_bytes, (int)sizeof(pad_next));
+    FIELD_BASE64_ARRAY("pad_col", pad_col);
+    FIELD_BASE64_ARRAY("pad_next", pad_next);
     OBJECT_END(s);
     if (s.reading) {
       pad_capacity = (get_psram_size() / sizeof(stereo16_t)) / PIECES;
