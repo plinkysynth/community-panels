@@ -45,6 +45,14 @@ To update a panel later, follow the same process with changes to its existing
 files. Once it's published, use its [community permalink](#permalinks) to
 share it with other Plinky users.
 
+### Tell people about yourself, too!
+
+Add an optional `your_name/README.md`
+alongside your panel folders, with a short bio and links to your music, website,
+or other projects. Once published, it appears on your author page at
+`https://plinky12.com/community/your_name/` and on your panel covers in the web
+IDE. You can include it in your panel PR or add it later in a separate PR.
+
 ## Panel Layout
 
 Use one author directory, then one directory per panel:
