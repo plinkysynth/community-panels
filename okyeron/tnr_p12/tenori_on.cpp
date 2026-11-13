@@ -1,22 +1,18 @@
 /*
 @Name: TNR-p12
 @Author: okyeron
+@Version: 1.1.0
 @Tags: sequencer, groovebox, midi
 @Preferred Panels: all
 @Description: An 8-layer 16-step grid sequencer with Score, Random, and Bounce modes, inspired by the Yamaha Tenori-On.
 
-TNR-p12 is a new C++ grid sequencer written for Plinky 12. It draws inspiration
-from the Yamaha Tenori-On interface and interaction ideas, but does not use Yamaha
-code or firmware and is not affiliated with or endorsed by Yamaha.
+A 16x15 step sequencer with 8 layers, inspired by the Yamaha Tenori-On.
 
-Development began after reading Chris Pirillo's Tenori-Online JavaScript project.
-TNR-p12 is a separate implementation tailored to Plinky 12's panel API, touch
-surface, synth, and MIDI:
-https://github.com/ChrisPirillo/tenori-on
-
-Additional inspiration and references:
+Inspired by:
 Yamaha Tenori-On hardware https://www.yamaha.com/en/tech-design/design/insights/id_005/
 Pika Blue https://www.pika.blue/categories/tenori-on/
+Chris Pirillo's "Tenori-Online" https://pirillo.com/arcade/tenori-on.html
+
 
 Grid layout:
   - Rows 0-14, columns 0-15: the 15-pitch x 16-step note grid (240 pads).
@@ -45,7 +41,7 @@ Layer modes:
 Note grid interaction (Score / Random modes):
   - Tap a pad to toggle it on/off
   - Drag across pads to paint notes (NOT_ISOLATED)
-  - Hold and squeeze a lit pad to set its individual note velocity via touch pressure
+  - Each pad's velocity comes from how hard it was pressed when placed (40-127)
 
 Note pitches (Score / Random):
   Pentatonic-major scale, C3 (MIDI 48) at row 14 up to A5 (MIDI 81) at row 0.
@@ -58,6 +54,16 @@ Pages:
   0 — main grid (this page)
   1 — panel save / load picker
   2 — per-layer synth editor (ADSR, filters, delay, reverb, pitch, granular)
+
+Changelog:
+  1.1.0 (2026-11-10)
+    - Louder output: pad velocity is now taken from the press, not the finger
+      lift-off, and has a floor of 40. Older songs' quiet pads are lifted to 40.
+    - Uses the framework's renamed on_setup_default_panel_state() hook.
+    - Removed the autosave-on-stop. Save songs from the save/load page; the
+      last saved or loaded song is reloaded at boot.
+  1.0.0 (2026-05-14)
+    - Initial release.
 */
 
 struct tenori_on : panel_t {
@@ -101,8 +107,25 @@ struct tenori_on : panel_t {
     // The previous hand-rolled curve p*(256-p)/64 was non-monotonic: raw pressure
     // can reach 255 (not just 127), and that formula collapsed above ~p=200
     // (p=255 -> velocity 3), so the hardest presses produced near-silent notes.
+    //
+    // The curve output (0-127) is rescaled onto MIN_VELOCITY..127 so a light tap
+    // still sounds at a usable level; without the floor, light touches landed in
+    // single digits and the panel was much quieter than other Plinky 12 panels.
+    static constexpr int MIN_VELOCITY = 40;
     static int pressure_to_velocity(int pressure) {
-        return clampi(touch_pressure_curve_q7(pressure), 1, 127);
+        int curved = clampi(touch_pressure_curve_q7(pressure), 0, 127);
+        return MIN_VELOCITY + curved * (127 - MIN_VELOCITY) / 127;
+    }
+
+    // Pad velocity capture: set on the press that lights the pad, then only ever
+    // raised while the finger stays down. Never lowered, so the low pressure
+    // readings as the finger lifts off don't overwrite the press velocity.
+    void capture_pad_velocity(int x, int y) {
+        int p = get_touch_pressure_xy(x, y);
+        if (p <= 0) return;
+        int v = pressure_to_velocity(p);
+        if (v > note_velocity[active_layer][y][x])
+            note_velocity[active_layer][y][x] = v; // v is 40..127, fits the uint8_t array
     }
 
     // Layer playback modes
@@ -194,8 +217,7 @@ struct tenori_on : panel_t {
         synth_preset_pick_mode = false;
     }
 
-    void setup_default_panel_state() override {
-        panel_t::setup_default_panel_state();
+    void on_setup_default_panel_state() override {
         memset(grid, 0, sizeof(grid));
         active_layer = 0;
         for (int i = 0; i < NUM_LAYERS; i++) {
@@ -221,7 +243,7 @@ struct tenori_on : panel_t {
     // A major pentatonic scale is the standard 5-note major scale with the two
     // half-step degrees (4th and 7th) omitted, leaving the interval pattern
     // whole-whole-(minor third)-whole-(minor third) between successive degrees
-    // — 2+2+3+2+3 = 12 semitones per octave.
+    // — 2+2+3+2+3 = 12 semitones per octave. 
     // -----------------------------------------------------------------------
     static constexpr int PENTATONIC_MAJOR_STEPS[5] = {2, 2, 3, 2, 3};
 
@@ -511,13 +533,6 @@ struct tenori_on : panel_t {
         int  col     = layer_col[active_layer]; // per-layer playhead position
         bool playing = is_transport_playing();
 
-        // Auto-save settings to SD when transport stops
-        static bool prev_playing_ui = false;
-        if (prev_playing_ui && !playing) {
-            save_settings_to_sd(false);
-        }
-        prev_playing_ui = playing;
-
         // Detect new sequencer step per layer to trigger animations
         if (playing) {
             for (int i = 0; i < NUM_LAYERS; i++) {
@@ -632,15 +647,14 @@ struct tenori_on : panel_t {
                         } else {
                             bool already = grid[active_layer][y][x];
                             for (int r = 0; r < 15; r++) grid[active_layer][r][x] = false;
-                            if (!already) grid[active_layer][y][x] = true;
+                            if (!already) {
+                                grid[active_layer][y][x] = true;
+                                note_velocity[active_layer][y][x] = MIN_VELOCITY; // re-captured below from this press
+                            }
                             bounce_pos[active_layer][x] = -1; // restart from new entry
                         }
                     }
-                    if (is_entry) {
-                        int p = get_touch_pressure_xy(x, y);
-                        if (p > 0)
-                            note_velocity[active_layer][y][x] = pressure_to_velocity(p);
-                    }
+                    if (grid[active_layer][y][x]) capture_pad_velocity(x, y);
                 }
             }
         } else {
@@ -664,12 +678,10 @@ struct tenori_on : panel_t {
                     if (button(x, y, color, NOT_ISOLATED)) {
                         on_sequence_lock_guard_t guard;
                         grid[active_layer][y][x] = !grid[active_layer][y][x];
+                        if (grid[active_layer][y][x])
+                            note_velocity[active_layer][y][x] = MIN_VELOCITY; // re-captured below from this press
                     }
-                    if (active) {
-                        int p = get_touch_pressure_xy(x, y);
-                        if (p > 0)
-                            note_velocity[active_layer][y][x] = pressure_to_velocity(p);
-                    }
+                    if (grid[active_layer][y][x]) capture_pad_velocity(x, y);
                 }
             }
         }
@@ -968,10 +980,20 @@ struct tenori_on : panel_t {
         FIELD_SYNTH_PRESET("preset7", 7);
         FIELD_MIX_PRESET("mix");
         OBJECT_END(s);
+        // Songs saved before the velocity floor can hold very low values (see
+        // pressure_to_velocity); lift them so old songs aren't near-silent.
+        if (s.reading) {
+            for (int l = 0; l < NUM_LAYERS; l++)
+                for (int y = 0; y < 15; y++)
+                    for (int x = 0; x < 16; x++)
+                        if (o.note_velocity[l][y][x] < MIN_VELOCITY)
+                            o.note_velocity[l][y][x] = MIN_VELOCITY;
+        }
         return true;
     }
 
-    bool on_serialise_settings(serialiser_t &s, int version) override {
-        return on_serialise(s, version);
-    }
+    // No on_serialise_settings() override: settings are for panel-local
+    // preferences that live outside the song, and this panel has none yet.
+    // Song state persists via the save/load page; the framework reloads the
+    // last saved/loaded song at boot.
 };

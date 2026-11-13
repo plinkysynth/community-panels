@@ -2,9 +2,9 @@
 
 TNR-p12 is a new C++ grid sequencer written for Plinky 12. It draws inspiration from the Yamaha Tenori-On interface and interaction ideas, but does not use Yamaha code or firmware and is not affiliated with or endorsed by Yamaha.
 
-Development began after reading [Chris Pirillo's Tenori-Online JavaScript project](https://github.com/ChrisPirillo/tenori-on). TNR-p12 is a separate implementation tailored to Plinky 12's panel API, touch surface, synth, and MIDI.
+Additional inspiration and references: [Yamaha Tenori-On hardware](https://www.yamaha.com/en/tech-design/design/insights/id_005/),  [Pika Blue](https://www.pika.blue/categories/tenori-on/), and [Chris Pirillo's Tenori-Online JavaScript project](https://github.com/ChrisPirillo/tenori-on).
 
-Additional inspiration and references: [Yamaha Tenori-On hardware](https://www.yamaha.com/en/tech-design/design/insights/id_005/) and [Pika Blue](https://www.pika.blue/categories/tenori-on/).
+TNR-p12 is a separate implementation tailored to Plinky 12's panel API, touch surface, synth, and MIDI.
 
 # Documentation
 
