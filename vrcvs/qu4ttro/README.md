@@ -1,14 +1,21 @@
-# QU4TTRO
+# VRCVS
 
-Four melodic tracks side by side on the Chords faceplate, plonky-style: each 8×6 sector is a set of strings a fifth apart, always in key and scale, with pressure and glide when sliding between pads. Each track has its own looper, length (1–256 steps), grid (1/2–1/32, triplets), direction and start point, so loops drift into polyrhythms.
+I play drums in Fine Before You Came, and I make music
+as VRCVS and lua: it started from dark, new wave
+and post punk roots and keeps drifting towards ambient,
+generative music and soundscapes.
 
-- **Live looping** like a guitar looper: tap rec, the loop starts on your first note, tap again to close it, again to overdub.
-- **Step entry** with the transport stopped: notes, chords, ties and rests (+STEP).
-- **MIX / SND / PRE**: mixer, sound editing and the system sound picker on the round pads.
-- **Song save/load** with the right side buttons.
+## Panels
 
-Full manual (EN/IT): https://github.com/vrcvs/plinky12_qu4ttro
+- **[QU4TTRO](qu4ttro/)** — four melodic tracks side by side, plonky-style,
+  each with its own looper, length and direction. Polyrhythmic loops on the
+  Chords faceplate.
 
-Large multisample banks (~8 MB) load slowly and only one or two fit in sample memory at once; lighter banks (1–2 MB) work best on all four tracks.
+## Elsewhere
 
-Freely inspired by [plonky](https://github.com/schollz/plonky) by Zack Scholl. By VRCVS – Instagram [@vrcvs](https://www.instagram.com/vrcvs/). MIT licence.
+- Instagram: [@vrcvs](https://www.instagram.com/vrcvs/)
+- YouTube: [@vrcvs](https://www.youtube.com/@vrcvs) — live jams
+- lua: [luaensemble.bandcamp.com](https://luaensemble.bandcamp.com/)
+- VRCVS: [vrcvs.bandcamp.com](https://vrcvs.bandcamp.com/)
+
+Hope you'll enjoy it ✨
