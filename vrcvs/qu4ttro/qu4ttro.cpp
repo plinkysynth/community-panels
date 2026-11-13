@@ -618,8 +618,6 @@ struct qu4ttro : panel_t {
   bool on_serialise(serialiser_t &s, int version) override {
     (void)version;
     qu4ttro &o = *this;
-    int n_seq = (int)sizeof(seq), n_att = (int)sizeof(attack), n_vel = (int)sizeof(vel);
-    int n_len = T, n_rate = T, n_ord = T, n_oct = T, n_mut = T, n_leg = T, n_run = T, n_sm = T, n_cue = T;
     OBJECT_BEGIN(s);
     FIELD_SYNTH_PRESET("sound1", 0);
     FIELD_SYNTH_PRESET("sound2", 1);
@@ -628,18 +626,18 @@ struct qu4ttro : panel_t {
     FIELD_MIX_PRESET("mix");
     FIELD("scale", scale_idx, 0u, 7u);
     FIELD("key", root_pc, 0u, 11u);
-    FIELD_BASE64("len", len_steps, n_len, (int)sizeof(len_steps));
-    FIELD_BASE64("grid", rate_idx, n_rate, (int)sizeof(rate_idx));
-    FIELD_BASE64("order", order_idx, n_ord, (int)sizeof(order_idx));
-    FIELD_BASE64("oct", octave, n_oct, (int)sizeof(octave));
-    FIELD_BASE64("mute", muted, n_mut, (int)sizeof(muted));
-    FIELD_BASE64("legato", legato, n_leg, (int)sizeof(legato));
-    FIELD_BASE64("run", running, n_run, (int)sizeof(running));
-    FIELD_BASE64("start", start_mode, n_sm, (int)sizeof(start_mode));
-    FIELD_BASE64("cue", cue, n_cue, (int)sizeof(cue));
-    FIELD_BASE64("seq", seq, n_seq, (int)sizeof(seq));
-    FIELD_BASE64("attack", attack, n_att, (int)sizeof(attack));
-    FIELD_BASE64("vel", vel, n_vel, (int)sizeof(vel));
+    FIELD_BASE64_ARRAY("len", len_steps);
+    FIELD_BASE64_ARRAY("grid", rate_idx);
+    FIELD_BASE64_ARRAY("order", order_idx);
+    FIELD_BASE64_ARRAY("oct", octave);
+    FIELD_BASE64_ARRAY("mute", muted);
+    FIELD_BASE64_ARRAY("legato", legato);
+    FIELD_BASE64_ARRAY("run", running);
+    FIELD_BASE64_ARRAY("start", start_mode);
+    FIELD_BASE64_ARRAY("cue", cue);
+    FIELD_BASE64_ARRAY("seq", seq);
+    FIELD_BASE64_ARRAY("attack", attack);
+    FIELD_BASE64_ARRAY("vel", vel);
     OBJECT_END(s);
     if (s.reading) { // rebuild runtime state after loading
       for (int t = 0; t < T; ++t) {
@@ -784,11 +782,8 @@ struct qu4ttro : panel_t {
     if (is_last_widget_released() && have) {
       int idx = cand_row * 8 + cand_col;
       const char *bname = bank_names[cur_bank];
-      // the auditioned sound is already loaded (samples included) in the audition slot:
-      // copy it onto the track instead of loading it from the SD a second time (instant)
-      on_sequence_lock_guard_t lock;
-      synth_presets[sel] = synth_presets[AUD];
-      bool ok = true;
+      // Install samples for the track's own slot; copying AUD would alias its sample address.
+      bool ok = load_preset_from_filename_with_category(sel, cat_names[cur_cat], bname, idx);
       if (ok) {
         strncpy(tr_cat[sel], cat_names[cur_cat], 16); tr_cat[sel][16] = 0;
         strncpy(tr_bank[sel], bname, 16); tr_bank[sel][16] = 0;
