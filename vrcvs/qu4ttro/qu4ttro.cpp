@@ -10,7 +10,7 @@
 @Preferred Panels: chords
 @Category: looper / sequencer
 
-Version 1.0
+Version 1.1
 QU4TTRO by VRCVS - https://www.instagram.com/vrcvs/
 Manual (IT/EN): see the QU4TTRO_by_VRCVS PDFs published with this panel.
 
@@ -124,6 +124,14 @@ struct qu4ttro : panel_t {
   int8_t cand_row, cand_col;   // auditioned preset waiting for LOAD (-1 = none)
   volatile int8_t preview_vel;  // >0 while a MY BANKS pad is held: the preview note plays on a spare voice
   bool preview_on;
+  // memory: Plinky keeps the samples of every loaded sound in 14 MB of flash. When the track already has one of your
+  // banks, the audition happens on the track's own slot (its old bank can be freed) and cancel reloads the old one;
+  // otherwise it uses the spare slot 11. So auditioning never needs room for one bank more than the tracks use.
+  volatile int8_t aud_slot;
+  bool aud_inplace;
+  uint8_t inplace_t;
+  char prev_cat[17], prev_bank[17];
+  int8_t prev_idx;
   uint8_t mode;  // what page 0 is showing
   uint64_t last_held[T];
   int16_t last_pos[T];
@@ -198,7 +206,8 @@ struct qu4ttro : panel_t {
       ph[t].reset(FORWARD, 0);
     }
     sel = 0;
-    for (int t = 0; t < T; ++t) tr_preset[t] = -1;
+    for (int t = 0; t < T; ++t) { tr_preset[t] = -1; tr_cat[t][0] = tr_bank[t][0] = 0; }
+    aud_slot = 11; aud_inplace = false; inplace_t = 0; prev_idx = -1; prev_cat[0] = prev_bank[0] = 0;
     ncat = -1;
     cand_row = -1;
     scale_idx = 0;
@@ -364,7 +373,7 @@ struct qu4ttro : panel_t {
       prev_active[t] = active;
     }
     // MY BANKS preview: voice 11 is outside the allocator (which uses voices 0-7)
-    if (preview_vel > 0) { play_synth(11, 11, preview_vel, 60 << 8, !preview_on); preview_on = true; } // voice 11, audition slot 11
+    if (preview_vel > 0) { play_synth(11, aud_slot, preview_vel, 60 << 8, !preview_on); preview_on = true; } // voice 11, audition slot
     else if (preview_on) { synth_note_up(11); preview_on = false; }
     uint16_t stale = va.garbage_collect_voices(1, 0, 0, 0, NVOICES);
     while (stale) {
@@ -638,6 +647,9 @@ struct qu4ttro : panel_t {
     FIELD_BASE64_ARRAY("seq", seq);
     FIELD_BASE64_ARRAY("attack", attack);
     FIELD_BASE64_ARRAY("vel", vel);
+    FIELD_BASE64_ARRAY("sd_cat", tr_cat);     // which of your banks each track has (for the memory-friendly audition)
+    FIELD_BASE64_ARRAY("sd_bank", tr_bank);
+    FIELD_BASE64_ARRAY("sd_preset", tr_preset);
     OBJECT_END(s);
     if (s.reading) { // rebuild runtime state after loading
       for (int t = 0; t < T; ++t) {
@@ -650,6 +662,8 @@ struct qu4ttro : panel_t {
         rec_free[t] = was_rec[t] = pend_restart[t] = false;
         rec_len[t] = len_steps[t];
         wpos[t] = 0;
+        tr_cat[t][16] = tr_bank[t][16] = 0;
+        if (tr_preset[t] < -1 || tr_preset[t] > 63 || !tr_cat[t][0] || !tr_bank[t][0]) tr_preset[t] = -1;
       }
     }
     return true;
@@ -732,8 +746,17 @@ struct qu4ttro : panel_t {
   //   rows 5-12, cols 9-16 presets of the selected bank (8x8, same grid as the XY.json files)
   //   row 14               track select (first 4 pads)
   //   bottom right:  ● = system picker   ✖ = cancel   ▶ = LOAD on the selected track and back to playing
-  // Touch a preset = AUDITION only (spare slot, plays while held). The track changes only with ▶.
+  // Touch a preset = AUDITION (plays while held). The track keeps it only with ▶; ✖ puts its old sound back.
+  // A track that already has one of your banks is auditioned on its own slot, so 4 banks of yours never need a 5th.
   static constexpr int AUD = 11, ROWC = 2, ROW0 = 4;
+  void restore_inplace(void) {
+    if (!aud_inplace) return;
+    preview_vel = 0;
+    if (prev_idx >= 0) load_preset_from_filename_with_category(inplace_t, prev_cat, prev_bank, prev_idx);
+    aud_inplace = false;
+    aud_slot = 11;
+    cand_row = -1;
+  }
   void draw_my_banks(void) {
     if (ncat < 0) scan_categories();
     int ncats = ncat > 0 ? ncat : 2;
@@ -759,7 +782,13 @@ struct qu4ttro : panel_t {
         bool cur = this_bank && tr_preset[sel] == i;
         set_led(x, y, cand ? BRIGHTEST(GREEN) : cur ? BRIGHTEST(WHITE) : (preset_bad & bit) ? RED : base);
         if (get_touch_pressed(x, y)) {
-          bool ok = load_preset_from_filename_with_category(AUD, cat_names[cur_cat], bname, i); // audition slot
+          if (!aud_inplace && tr_preset[sel] >= 0) { // the track has one of your banks: audition on the track itself
+            aud_inplace = true; inplace_t = (uint8_t)sel;
+            memcpy(prev_cat, tr_cat[sel], 17); memcpy(prev_bank, tr_bank[sel], 17); prev_idx = tr_preset[sel];
+          }
+          int slot = aud_inplace ? inplace_t : AUD;
+          aud_slot = (int8_t)slot;
+          bool ok = load_preset_from_filename_with_category(slot, cat_names[cur_cat], bname, i);
           if (ok) { preset_bad &= ~bit; cand_row = (int8_t)(i >> 3); cand_col = (int8_t)(i & 7); }
           else { preset_bad |= bit; if (cand) cand_row = -1; printf("BROWSER: cannot load %s/%s %d%d\n", cat_names[cur_cat], bname, i >> 3, i & 7); }
         }
@@ -769,21 +798,28 @@ struct qu4ttro : panel_t {
     }
     preview_vel = (int8_t)pv;
     for (int t = 0; t < T; ++t)
-      if (button(t, 13, t == sel ? BRIGHTEST(k_track_col[t]) : DIMMER(k_track_col[t]), ISOLATED, "select track")) sel = t;
+      if (button(t, 13, t == sel ? BRIGHTEST(k_track_col[t]) : DIMMER(k_track_col[t]), ISOLATED, "select track") && t != sel) {
+        restore_inplace();
+        sel = t;
+        cand_row = -1;
+      }
     // ● system picker
     button(12, 15, BLUE, ISOLATED, "back to the system picker");
-    if (is_last_widget_released()) { pp.picker.reset_which_slot_is_selected(); factory_picker = true; preview_vel = 0; }
+    if (is_last_widget_released()) { restore_inplace(); pp.picker.reset_which_slot_is_selected(); factory_picker = true; preview_vel = 0; }
     // ✖ cancel: back to playing, nothing changes
     button(13, 15, RED, ISOLATED, "cancel");
-    if (is_last_widget_released()) { mode = MODE_PLAY; preview_vel = 0; cand_row = -1; }
+    if (is_last_widget_released()) { restore_inplace(); mode = MODE_PLAY; preview_vel = 0; cand_row = -1; }
     // ▶ LOAD the auditioned sound on the selected track, then back to playing
     bool have = cand_row >= 0 && cur_bank >= 0;
     button(15, 15, have ? BRIGHTEST(GREEN) : DIMMER(GREEN), ISOLATED, "LOAD on the selected track");
     if (is_last_widget_released() && have) {
       int idx = cand_row * 8 + cand_col;
       const char *bname = bank_names[cur_bank];
-      // Install samples for the track's own slot; copying AUD would alias its sample address.
-      bool ok = load_preset_from_filename_with_category(sel, cat_names[cur_cat], bname, idx);
+      // Install samples for the track's own slot; copying AUD would alias its sample address. After an audition on
+      // the track itself the sound is already there.
+      bool ok = aud_inplace ? true : load_preset_from_filename_with_category(sel, cat_names[cur_cat], bname, idx);
+      aud_inplace = false;
+      aud_slot = 11;
       if (ok) {
         strncpy(tr_cat[sel], cat_names[cur_cat], 16); tr_cat[sel][16] = 0;
         strncpy(tr_bank[sel], bname, 16); tr_bank[sel][16] = 0;
@@ -831,7 +867,7 @@ struct qu4ttro : panel_t {
         if (is_last_widget_released()) { factory_picker = false; ncat = -1; cand_row = -1; return; }
         if (pp.picker.cancel_button(13, 15)) { mode = MODE_PLAY; return; }
         int action = pp.picker.preset_ok_button(sel, false, 15, 15); // no "save on long press": a long load must not turn into a save
-        if (action > 0) mode = MODE_PLAY;
+        if (action > 0) { tr_preset[sel] = -1; tr_cat[sel][0] = tr_bank[sel][0] = 0; mode = MODE_PLAY; } // not one of your SD banks
         return;
       }
       draw_my_banks();
