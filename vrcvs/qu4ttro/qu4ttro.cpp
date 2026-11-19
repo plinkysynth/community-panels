@@ -178,41 +178,53 @@ struct qu4ttro : panel_t {
 
   void on_setup_default_panel_state() override {
     panel_t::on_setup_default_panel_state();
-    printf("QU4TTRO by VRCVS v1.0\n");
+    printf("QU4TTRO by VRCVS v1.1\n");
     memset(seq, 0, sizeof(seq));
     memset(attack, 0, sizeof(attack));
     memset(vel, 0, sizeof(vel));
-    memset(slid, 0, sizeof(slid));
-    memset(prev_src, 0, sizeof(prev_src));
-    erasing = false;
     static const int8_t def_oct[T] = {0, 0, -12, 0};
     for (int t = 0; t < T; ++t) {
       len_steps[t] = 16;
       rate_idx[t] = 3; // 1/16
       running[t] = true;
-      start_req[t] = false;
       start_mode[t] = 0;
       cue[t] = 0;
       order_idx[t] = 0;
       octave[t] = def_oct[t];
       muted[t] = false;
+      legato[t] = false;
+      tr_preset[t] = -1; tr_cat[t][0] = tr_bank[t][0] = 0;
+    }
+    scale_idx = 0;
+    root_pc = 2; // D
+    reset_runtime();
+  }
+  // Loading a saved song constructs a fresh panel without calling on_setup_default_panel_state(), so the
+  // transient state is set on both paths; the saved settings and sounds are left as loaded.
+  void reset_runtime(void) {
+    memset(slid, 0, sizeof(slid));
+    memset(prev_src, 0, sizeof(prev_src));
+    memset(vel_seen, 0, sizeof(vel_seen));
+    erasing = false; armwait = false; len_held = false; cue_held = false;
+    srec_prev = 0; srec_open = false; next_tied = false;
+    mode = MODE_PLAY;
+    for (int t = 0; t < T; ++t) {
+      start_req[t] = false;
       held[t] = prev_active[t] = last_held[t] = 0;
       last_pos[t] = -1;
       last_mono[t] = -1;
-      legato[t] = false;
       wpos[t] = 0;
       rec_len[t] = 0;
       rec_free[t] = was_rec[t] = pend_restart[t] = false;
-      ph[t].reset(FORWARD, 0);
+      ph[t].reset(k_orders[order_idx[t] & 3], 0);
     }
     sel = 0;
-    for (int t = 0; t < T; ++t) { tr_preset[t] = -1; tr_cat[t][0] = tr_bank[t][0] = 0; }
     aud_slot = 11; aud_inplace = false; inplace_t = 0; prev_idx = -1; prev_cat[0] = prev_bank[0] = 0;
+    preview_vel = 0; preview_on = false;
     ncat = -1;
     cand_row = -1;
-    scale_idx = 0;
-    root_pc = 2; // D
   }
+  void on_load_finished() override { reset_runtime(); }
 
   int get_num_pages(void) override { return 2; } // 0 instrument (play / mixer / sound / preset), 1 song save/load
   int get_num_tracks(void) override { return T; }
