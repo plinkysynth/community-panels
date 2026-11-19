@@ -865,12 +865,17 @@ struct n3ve : panel_t {
     freeze = 0; reply = 1; mute_snow = 0; mute_tears = 0; mute_live = 0;
     p_freq = 100; p_melvar = 25; p_rvar = 35; p_vmin = 30; p_vmax = 85; p_nlen = 30;
     for (int v = 0; v < NV; ++v) { midi_mode[v] = 1; midi_ch[v] = (uint8_t)v; } // Plinky + MIDI, channels 1 2 3
+    for (int v = 0; v < NV; ++v) { tr_preset[v] = -1; tr_cat[v][0] = 0; tr_bank[v][0] = 0; }
+    reset_runtime();
+  }
+  // Saved-song loads construct a fresh panel without calling the default-song hook.
+  // Initialise transient state on both paths, preserving loaded settings and presets.
+  void reset_runtime(void) {
     midi_help_until = 0;
     mode = MODE_PLAY; sel = LIVE;
     factory_picker = true; ncat = -1; nbank = 0; cur_cat = 0; cur_bank = -1; cand_row = -1; cand_col = 0;
     preset_mask = preset_bad = 0; preview_vel = 0; preview_on = false;
     aud_slot = 11; aud_inplace = false; inplace_v = 0; prev_idx = -1; prev_cat[0] = prev_bank[0] = 0;
-    for (int v = 0; v < NV; ++v) { tr_preset[v] = -1; tr_cat[v][0] = 0; tr_bank[v][0] = 0; }
     memset(flakes, 0, sizeof(flakes));
     memset(drops, 0, sizeof(drops));
     memset(gnotes, 0, sizeof(gnotes));
@@ -903,6 +908,7 @@ struct n3ve : panel_t {
     }
     build_scale();
   }
+  void on_load_finished() override { reset_runtime(); }
 
   int get_num_pages(void) override { return 2; }
   int get_num_tracks(void) override { return NV; }
