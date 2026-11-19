@@ -45,9 +45,9 @@ QUICK REFERENCE (Chords panel; rows/columns counted from 0, top-left)
   Row 14      x7 arpeggio direction | x8 snow, x9 tears, x10 live: select the voice for octave, mute, MIX, SND, PRE
               x11 mute the selected voice (a muted voice blinks; muted live still teaches the tears)
               x12 MIX | x13 SND | x14 PRE | x15 REPLY (call and response, on by default)
-  PRE         every voice can have its own sound: system picker (factory and saved presets); the blue pad opens
-              your banks on the SD card (/PLINKY/BANKS: your presets and multisamples, e.g. from Bank Builder).
-              Touch a preset to hear it, play = load it on the selected voice. Very large multisample banks load slowly.
+  PRE         every voice can have its own sound: the system picker lists factory sounds, saved presets and your own
+              banks on the SD card (/PLINKY/BANKS: your presets and multisamples, e.g. from Bank Builder).
+              Touch a preset to hear it on the voice, play = keep it, X = cancel. Very large banks load slowly.
   Row 15      x5-7 grid 1/4 1/8 1/16 | x8-11 chord length 1 / 2 / 4 / 8 bars | x12 PARAM | x13 progression
               x14 stop | x15 play (the generative voices run while the transport plays; the sky and keyboard always play)
   MIX         per voice (snow, tears, live from the left): volume, pan, delay send, reverb send. Bottom row, under each
@@ -83,12 +83,6 @@ static const char *k_prog_names[7] = {"harmony: auto (fits the scale)", "harmony
 static const uint32_t k_prog_col[7] = {WHITE, ORANGE, YELLOW, GREEN, CYAN, BLUE, PURPLE};
 static const int8_t k_progs[5][4] = {{0, 5, 2, 6}, {0, 6, 5, 6}, {0, 3, 5, 4}, {0, 2, 3, 5}, {0, 0, 0, 0}};
 static const int8_t k_prog_len[5] = {4, 4, 4, 4, 1};
-
-// SOUND BROWSER (PRE, then the blue pad): your own presets and multisample banks from /PLINKY/BANKS on the SD card
-static constexpr int MAXCATS = 16, MAXBANKS = 64;
-static const uint32_t k_cat_col[8] = {PINK, CYAN, ORANGE, GREEN, YELLOW, BLUE, PURPLE, TEAL};
-static const char *k_fallback_cat[2] = {"USER1", "USER2"};
-static const char *k_fallback_bank[8] = {"BANK1", "BANK2", "BANK3", "BANK4", "BANK5", "BANK6", "BANK7", "BANK8"};
 
 static inline int nv_min(int a, int b) { return a < b ? a : b; }
 static inline int nv_max(int a, int b) { return a > b ? a : b; }
@@ -189,29 +183,6 @@ struct n3ve : panel_t {
   uint32_t flash_us[3];
   uint32_t midi_help_until; // MIX: shows the MIDI setting of the voice you just changed
   uint8_t midi_help_v;
-  // PRE: system picker (factory and saved presets) or SD browser (your banks: presets and multisamples)
-  bool factory_picker;
-  char cat_names[MAXCATS][17]; // category folders found in /PLINKY/BANKS
-  int8_t ncat;                 // -1 = not scanned yet, 0 = listing not possible (fallback)
-  char bank_names[MAXBANKS][17];
-  int8_t nbank;
-  uint8_t cur_cat;
-  int8_t cur_bank;
-  uint64_t preset_mask, preset_bad;
-  char tr_cat[NV][17], tr_bank[NV][17]; // what each voice has loaded from the SD browser
-  int8_t tr_preset[NV];
-  int8_t cand_row, cand_col;  // auditioned preset waiting for LOAD (-1 = none)
-  volatile int8_t preview_vel; // >0 while a preset pad is held: the preview plays on spare voice 11
-  bool preview_on;
-  // memory: Plinky keeps the samples of every loaded sound in 14 MB of flash. When the voice already has one of your
-  // banks, the audition happens on the voice's own slot (its old bank can be freed) and cancel reloads the old one;
-  // otherwise it uses the spare slot 11. So auditioning never needs room for one bank more than the voices use.
-  volatile int8_t aud_slot;
-  bool aud_inplace;
-  uint8_t inplace_v;
-  char prev_cat[17], prev_bank[17];
-  int8_t prev_idx;
-
   // =========================================================
   // SCALE AND HARMONY (from NEVE.lua)
   // =========================================================
@@ -865,7 +836,6 @@ struct n3ve : panel_t {
     freeze = 0; reply = 1; mute_snow = 0; mute_tears = 0; mute_live = 0;
     p_freq = 100; p_melvar = 25; p_rvar = 35; p_vmin = 30; p_vmax = 85; p_nlen = 30;
     for (int v = 0; v < NV; ++v) { midi_mode[v] = 1; midi_ch[v] = (uint8_t)v; } // Plinky + MIDI, channels 1 2 3
-    for (int v = 0; v < NV; ++v) { tr_preset[v] = -1; tr_cat[v][0] = 0; tr_bank[v][0] = 0; }
     reset_runtime();
   }
   // Saved-song loads construct a fresh panel without calling the default-song hook.
@@ -873,9 +843,6 @@ struct n3ve : panel_t {
   void reset_runtime(void) {
     midi_help_until = 0;
     mode = MODE_PLAY; sel = LIVE;
-    factory_picker = true; ncat = -1; nbank = 0; cur_cat = 0; cur_bank = -1; cand_row = -1; cand_col = 0;
-    preset_mask = preset_bad = 0; preview_vel = 0; preview_on = false;
-    aud_slot = 11; aud_inplace = false; inplace_v = 0; prev_idx = -1; prev_cat[0] = prev_bank[0] = 0;
     memset(flakes, 0, sizeof(flakes));
     memset(drops, 0, sizeof(drops));
     memset(gnotes, 0, sizeof(gnotes));
@@ -903,8 +870,6 @@ struct n3ve : panel_t {
     p_vmax = (uint8_t)nv_clamp(p_vmax, 1, 127); p_nlen = (uint8_t)nv_clamp(p_nlen, 3, 120);
     for (int v = 0; v < NV; ++v) {
       midi_mode[v] %= 3; midi_ch[v] &= 15;
-      tr_cat[v][16] = tr_bank[v][16] = 0;
-      if (tr_preset[v] < -1 || tr_preset[v] > 63 || !tr_cat[v][0] || !tr_bank[v][0]) tr_preset[v] = -1;
     }
     build_scale();
   }
@@ -1001,9 +966,6 @@ struct n3ve : panel_t {
       declare_midi_note(midi_ch[g.voice % 3] & 15, g.note, g.vel, MIDI_PORT_1);
     }
     send_declared_midi_notes(-1);
-    // SD browser preview: voice 11 is outside the allocator (which uses voices 0-7), audition slot 11
-    if (preview_vel > 0) { play_synth(11, aud_slot, preview_vel, 60 << 8, !preview_on); preview_on = true; }
-    else if (preview_on) { synth_note_up(11); preview_on = false; }
     uint16_t stale = va.garbage_collect_voices(1, 0, 0, 0, DEFAULT_VOICE_ALLOCATOR_VOICES);
     while (stale) {
       int v = __builtin_ctz((unsigned)stale);
@@ -1180,7 +1142,7 @@ struct n3ve : panel_t {
     button(14, 14, BLUE, ISOLATED, "PRE: choose the sound of the selected voice");
     if (is_last_widget_released()) {
       pp.picker.reset_which_slot_is_selected();
-      mode = MODE_PRESET; factory_picker = true; ncat = -1; cand_row = -1;
+      mode = MODE_PRESET;
     }
     static const char *q_help[3] = {"grid 1/4", "grid 1/8", "grid 1/16"};
     for (int i = 0; i < 3; ++i)
@@ -1234,151 +1196,6 @@ struct n3ve : panel_t {
         *vals[i] = (uint8_t)nv_clamp(last_widget_new_value(), mins[i], maxs[i]);
     }
   }
-  // ---------------- SD BROWSER (from QU4TTRO) ----------------
-  // list the sub-folders of path, alphabetically, into names[max][17]
-  int list_dirs(const char *path, char (*names)[17], int maxn) {
-    DIR dir;
-    FILINFO fi;
-    if (f_opendir(&dir, path) != FR_OK) { printf("BROWSER: cannot open %s\n", path); return -1; }
-    int n = 0;
-    while (f_readdir(&dir, &fi) == FR_OK && fi.fname[0]) {
-      if (!(fi.fattrib & AM_DIR) || fi.fname[0] == '.' || strlen(fi.fname) > 16) continue;
-      if (n >= maxn) break;
-      int i = n;
-      while (i > 0 && strcmp(names[i - 1], fi.fname) > 0) { memcpy(names[i], names[i - 1], 17); --i; }
-      strncpy(names[i], fi.fname, 16);
-      names[i][16] = 0;
-      ++n;
-    }
-    f_closedir(&dir);
-    return n;
-  }
-  // a bank folder holds XY.json files: X = row 0-7, Y = column 0-7 of the 8x8 preset grid
-  void select_bank(int b) {
-    cur_bank = (int8_t)b;
-    preset_mask = preset_bad = 0;
-    cand_row = -1;
-    if (b < 0 || b >= nbank) return;
-    char path[60];
-    snprintf(path, sizeof(path), "/PLINKY/BANKS/%s/%s", cat_names[cur_cat], bank_names[b]);
-    DIR dir;
-    FILINFO fi;
-    if (f_opendir(&dir, path) != FR_OK) { preset_mask = ~0ull; return; } // cannot list: allow every slot
-    while (f_readdir(&dir, &fi) == FR_OK && fi.fname[0]) {
-      const char *n = fi.fname;
-      // "XY.json", or its short 8.3 form "XY~1.JSO"
-      if (n[0] >= '0' && n[0] <= '7' && n[1] >= '0' && n[1] <= '7' && (n[2] == '.' || n[2] == '~'))
-        preset_mask |= 1ull << ((n[0] - '0') * 8 + (n[1] - '0'));
-    }
-    f_closedir(&dir);
-    if (!preset_mask) preset_mask = ~0ull;
-  }
-  void select_category(int c) {
-    cur_cat = (uint8_t)c;
-    if (ncat > 0) {
-      char path[40];
-      snprintf(path, sizeof(path), "/PLINKY/BANKS/%s", cat_names[c]);
-      int n = list_dirs(path, bank_names, MAXBANKS);
-      nbank = (int8_t)(n < 0 ? 0 : n);
-    } else {
-      for (int i = 0; i < 8; ++i) { strncpy(bank_names[i], k_fallback_bank[i], 16); bank_names[i][16] = 0; }
-      nbank = 8;
-    }
-    select_bank(nbank > 0 ? 0 : -1);
-  }
-  void scan_categories(void) {
-    int n = list_dirs("/PLINKY/BANKS", cat_names, MAXCATS);
-    if (n <= 0) {
-      ncat = 0;
-      for (int i = 0; i < 2; ++i) { strncpy(cat_names[i], k_fallback_cat[i], 16); cat_names[i][16] = 0; }
-    } else ncat = (int8_t)n;
-    int ncats = ncat > 0 ? ncat : 2, start = 0;
-    for (int i = 0; i < ncats; ++i) if (!strcmp(cat_names[i], "USER1")) start = i; // open on USER1 if it exists
-    select_category(start);
-  }
-  // cancel an audition made on the voice itself: reload the bank the voice had before
-  void restore_inplace(void) {
-    if (!aud_inplace) return;
-    preview_vel = 0;
-    if (prev_idx >= 0) load_preset_from_filename_with_category(inplace_v, prev_cat, prev_bank, prev_idx);
-    aud_inplace = false;
-    aud_slot = 11;
-    cand_row = -1;
-  }
-  // row 2 categories | rows 4-11: banks (left 8x8) and presets of the selected bank (right 8x8)
-  // row 13: voice | bottom right: blue = system picker, X = cancel, play = LOAD on the selected voice
-  // touch a preset = audition only (spare slot 11, plays while held, pressure = dynamics)
-  void draw_my_banks(void) {
-    static constexpr int AUD = 11, ROWC = 2, ROW0 = 4;
-    if (ncat < 0) scan_categories();
-    int ncats = ncat > 0 ? ncat : 2;
-    int pv = 0;
-    uint32_t base = BRIGHTEST(k_cat_col[cur_cat & 7]), base_lo = k_cat_col[cur_cat & 7];
-    for (int i = 0; i < ncats && i < 16; ++i)
-      if (button(i, ROWC, i == cur_cat ? BRIGHTEST(WHITE) : k_cat_col[i & 7], ISOLATED, cat_names[i])) select_category(i);
-    for (int b = 0; b < 64 && b < nbank; ++b) {
-      int x = b & 7, y = ROW0 + (b >> 3);
-      bool cur = !strcmp(tr_cat[sel], cat_names[cur_cat]) && !strcmp(tr_bank[sel], bank_names[b]);
-      if (button(x, y, b == cur_bank ? BRIGHTEST(WHITE) : cur ? WHITE : base_lo, ISOLATED, bank_names[b])) select_bank(b);
-    }
-    if (cur_bank >= 0) {
-      const char *bname = bank_names[cur_bank];
-      bool this_bank = !strcmp(tr_cat[sel], cat_names[cur_cat]) && !strcmp(tr_bank[sel], bname);
-      for (int i = 0; i < 64; ++i) {
-        int x = 8 + (i & 7), y = ROW0 + (i >> 3);
-        uint64_t bit = 1ull << i;
-        if (!(preset_mask & bit)) continue;
-        bool cand = cand_row == (i >> 3) && cand_col == (i & 7);
-        bool cur = this_bank && tr_preset[sel] == i;
-        set_led(x, y, cand ? BRIGHTEST(GREEN) : cur ? BRIGHTEST(WHITE) : (preset_bad & bit) ? RED : base);
-        if (get_touch_pressed(x, y)) {
-          // the voice already has one of your banks: audition on the voice itself, so its old bank is not kept too
-          if (!aud_inplace && tr_preset[sel] >= 0) {
-            aud_inplace = true; inplace_v = sel;
-            memcpy(prev_cat, tr_cat[sel], 17); memcpy(prev_bank, tr_bank[sel], 17); prev_idx = tr_preset[sel];
-          }
-          int slot = aud_inplace ? inplace_v : AUD;
-          aud_slot = (int8_t)slot;
-          bool ok = load_preset_from_filename_with_category(slot, cat_names[cur_cat], bname, i);
-          if (ok) { preset_bad &= ~bit; cand_row = (int8_t)(i >> 3); cand_col = (int8_t)(i & 7); }
-          else { preset_bad |= bit; if (cand) cand_row = -1; }
-        }
-        if (get_touch_down(x, y) && cand_row == (i >> 3) && cand_col == (i & 7))
-          pv = nv_clamp(touch_pressure_curve_q7(get_touch_pressure_xy(x, y)), 1, 127);
-      }
-    }
-    preview_vel = (int8_t)pv;
-    for (int v = 0; v < NV; ++v)
-      if (button(v, 13, v == sel ? BRIGHTEST(k_voice_col[v]) : DIMMER(k_voice_col[v]), ISOLATED, k_voice_names[v]) && v != sel) {
-        restore_inplace();
-        sel = (uint8_t)v;
-        cand_row = -1;
-      }
-    button(12, 15, BLUE, ISOLATED, "back to the system picker");
-    if (is_last_widget_released()) { restore_inplace(); pp.picker.reset_which_slot_is_selected(); factory_picker = true; preview_vel = 0; }
-    button(13, 15, RED, ISOLATED, "cancel");
-    if (is_last_widget_released()) { restore_inplace(); mode = MODE_PLAY; preview_vel = 0; cand_row = -1; }
-    bool have = cand_row >= 0 && cur_bank >= 0;
-    button(15, 15, have ? BRIGHTEST(GREEN) : DIMMER(GREEN), ISOLATED, "LOAD on the selected voice");
-    if (is_last_widget_released() && have) {
-      int idx = cand_row * 8 + cand_col;
-      const char *bname = bank_names[cur_bank];
-      // load into the voice's own slot (copying the audition slot would alias its sample address); after an audition
-      // on the voice itself the sound is already there
-      bool ok = aud_inplace ? true : load_preset_from_filename_with_category(sel, cat_names[cur_cat], bname, idx);
-      aud_inplace = false;
-      aud_slot = 11;
-      if (ok) {
-        strncpy(tr_cat[sel], cat_names[cur_cat], 16); tr_cat[sel][16] = 0;
-        strncpy(tr_bank[sel], bname, 16); tr_bank[sel][16] = 0;
-        tr_preset[sel] = (int8_t)idx;
-        cand_row = -1;
-        mode = MODE_PLAY;
-        preview_vel = 0;
-      }
-    }
-  }
-
   bool back_button(void) { button(15, 15, BRIGHTEST(WHITE), ISOLATED, "back to play"); return is_last_widget_released(); }
 
   bool on_serialise(serialiser_t &s, int version) override {
@@ -1415,9 +1232,6 @@ struct n3ve : panel_t {
     FIELD("note_len", p_nlen, 3u, 120u);
     FIELD_BASE64_ARRAY("midi_mode", midi_mode);
     FIELD_BASE64_ARRAY("midi_ch", midi_ch);
-    FIELD_BASE64_ARRAY("sd_cat", tr_cat);     // which of your banks each voice has (for the memory-friendly audition)
-    FIELD_BASE64_ARRAY("sd_bank", tr_bank);
-    FIELD_BASE64_ARRAY("sd_preset", tr_preset);
     OBJECT_END(s);
     if (s.reading) rebuild_after_settings();
     return true;
@@ -1456,23 +1270,18 @@ struct n3ve : panel_t {
     }
     if (mode == MODE_PARAM) { clear_keyboard(); draw_params(); if (back_button()) mode = MODE_PLAY; return; }
     if (mode == MODE_PRESET) {
+      // PRE: the system picker (instant preview on the selected voice itself): factory sounds, saved presets and your own
+      // banks in PLINKY/BANKS. Row 14 = voice select, X = cancel (the voice keeps its sound), play = load.
       clear_keyboard();
-      if (factory_picker) {
-        // system picker (factory and saved presets, instant preview); the blue pad opens the SD browser
-        pp.picker.preset_picker(sel, 2, 10, FLAG_PICKER_ENABLE_DELETE);
-        for (int v = 0; v < NV; ++v)
-          if (button(v, 13, v == sel ? BRIGHTEST(k_voice_col[v]) : DIMMER(k_voice_col[v]), ISOLATED, k_voice_names[v])) {
-            sel = (uint8_t)v;
-            pp.picker.reset_which_slot_is_selected();
-          }
-        button(12, 15, BLUE, ISOLATED, "your banks on the SD card: presets and multisamples");
-        if (is_last_widget_released()) { factory_picker = false; ncat = -1; cand_row = -1; return; }
-        if (pp.picker.cancel_button(13, 15)) { mode = MODE_PLAY; return; }
-        int action = pp.picker.preset_ok_button(sel, false, 15, 15); // no save on long press: a long load must not become a save
-        if (action > 0) { tr_preset[sel] = -1; tr_cat[sel][0] = tr_bank[sel][0] = 0; mode = MODE_PLAY; } // not one of your SD banks
-        return;
-      }
-      draw_my_banks();
+      pp.picker.preset_picker(sel, 2, 10, FLAG_PICKER_ENABLE_DELETE);
+      for (int v = 0; v < NV; ++v)
+        if (button(v, 13, v == sel ? BRIGHTEST(k_voice_col[v]) : DIMMER(k_voice_col[v]), ISOLATED, k_voice_names[v])) {
+          sel = (uint8_t)v;
+          pp.picker.reset_which_slot_is_selected();
+        }
+      if (pp.picker.cancel_button(13, 15)) { mode = MODE_PLAY; return; }
+      int action = pp.picker.preset_ok_button(sel, false, 15, 15); // no save on long press: a long load must not become a save
+      if (action > 0) mode = MODE_PLAY;
       return;
     }
     read_sky();
