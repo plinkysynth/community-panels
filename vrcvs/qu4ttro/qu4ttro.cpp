@@ -843,11 +843,27 @@ struct qu4ttro : panel_t {
     }
   }
 
+  // The song page lists /PLINKY/<panel>/<bank>/ (for example /PLINKY/u_n3ve/00/05.json). On a card where this panel has
+  // never saved, those folders do not exist: the picker cannot open them, its OK pad stays dark and nothing can be saved.
+  // Create them the first time the page opens.
+  bool song_folder_ok = false;
+  void ensure_song_folder(void) {
+    if (song_folder_ok) return;
+    const char *name = get_current_panel_name();
+    if (!name || !name[0]) return;
+    char path[48];
+    snprintf(path, sizeof(path), "/PLINKY/%s", name);
+    FRESULT a = f_mkdir(path);
+    snprintf(path, sizeof(path), "/PLINKY/%s/00", name);
+    FRESULT b = f_mkdir(path);
+    song_folder_ok = (a == FR_OK || a == FR_EXIST) && (b == FR_OK || b == FR_EXIST);
+    if (!song_folder_ok) printf("song folder /PLINKY/%s: cannot create (%d %d)\n", name, (int)a, (int)b);
+  }
   void on_ui(int delta_time_us) override {
     int sp = get_scroll_page();
     if (sp < 0) return;
     leds_clear();
-    if (sp == 1) { clear_held(); song_page.saveload(16, true, FLAG_PICKER_ENABLE_DELETE); return; }
+    if (sp == 1) { clear_held(); ensure_song_folder(); song_page.saveload(16, true, FLAG_PICKER_ENABLE_DELETE); return; }
     if (sp > 1) { scroll_to_page(1); return; }
     if (mode == MODE_MIX) {
       clear_held();
