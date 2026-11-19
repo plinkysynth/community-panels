@@ -9,6 +9,6 @@ Four melodic tracks side by side on the Chords faceplate, plonky-style: each 8×
 
 [PDF manual](manual.pdf) (EN). Italian manual and changelog: https://github.com/vrcvs/plinky12_qu4ttro
 
-**Your own multisample banks:** the Plinky has 14 MB of sample memory. To use 4 of your banks at once, build them in the [Bank Builder](https://vrcvs.github.io/plinky12_bank_builder/) with *Banks loaded together: 4* (about 3 MB each). Auditioning in the SD browser never needs room for an extra bank.
+**Your own multisample banks:** the Plinky has 14 MB of sample memory. To use 4 of your banks at once, build them in the [Bank Builder](https://vrcvs.github.io/plinky12_bank_builder/) with *Banks loaded together: 4* (about 3 MB each). Your banks appear in the PRE sound picker, and auditioning there never needs room for an extra bank.
 
 Freely inspired by [plonky](https://github.com/schollz/plonky) by Zack Scholl. By VRCVS – Instagram [@vrcvs](https://www.instagram.com/vrcvs/). MIT licence.
