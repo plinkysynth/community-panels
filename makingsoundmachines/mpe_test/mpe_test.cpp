@@ -44,6 +44,13 @@ Page	Label	  Values
                 key: follow the song key and scale
                 chrd: follow the chord root and chord notes
                 cscl: follow the chord root and chord scale
+
+Modulation sources:
+                On a synth edit page (A or B), the side buttons pick a modulation source:
+                left-up A, right-up B, left-down X, right-down Y, both top or both bottom: pressure.
+                The sliders and XY pad then set that source's modulation depth, and an LFO row
+                (slower, value slider, faster, play/pause) replaces the brightness slider above the preview.
+                Press the same button again to return to normal editing.
 */
 #define PANEL_PAD_COLOR YELLOW
 
@@ -55,10 +62,14 @@ struct mpe_test : panel_t {
   static constexpr int MAX_CHANNELS = 7;
   static constexpr int MAX_STRINGS = 16;
   static constexpr int BASE_NOTE = 24; // C1; the root note setting is added to this.
-  static constexpr int PREVIEW_Y = 9;
+  static constexpr int PREVIEW_Y = 10;
   static constexpr int PREVIEW_W = 7;
-  static constexpr int PREVIEW_H = 6;
+  static constexpr int PREVIEW_H = 5;
   static constexpr int PREVIEW_POS_OFFSET = 5;
+  // In modulation-source mode the LFO row takes the preview's top row and the brightness slider's column.
+  static constexpr int MOD_LFO_X = 0;
+  static constexpr int MOD_LFO_Y = PREVIEW_Y;
+  static constexpr int MOD_LFO_W = PREVIEW_W + 1;
   static constexpr int SETTINGS_PAGES = 9;
   static constexpr int NUM_SCALES = 16;
 
@@ -109,6 +120,7 @@ struct mpe_test : panel_t {
   mpe_input_t mpe_input;
   slider_t brightness_slider[TRACKS];
   preset_pages_t preset_pages;
+  mod_source_ui_state_t mod_source_ui;
   panel_page_t panel_page;
   uint8_t page = PAGE_PLAY;
   linear_scan_map_t<64, uint32_t, uint8_t> source_brightness;
@@ -175,10 +187,12 @@ struct mpe_test : panel_t {
     // Both tracks start from the system default preset; only the hue differs, to tell A and B apart.
     synth_presets[0].hue = 0;
     synth_presets[1].hue = 63;
+    mod_source_ui.reset();
     PublishMusicalState();
   }
 
   void on_load_finished() override {
+    mod_source_ui.reset();
     rebuild_derived_state();
     PublishMusicalState();
   }
@@ -331,7 +345,7 @@ struct mpe_test : panel_t {
     (void)delta_time_us;
     read_harmonic_state_changes();
     bool top_page = get_scroll_page() == 0;
-    rect_t preview = {0, PREVIEW_Y, PREVIEW_W, PREVIEW_H};
+    rect_t preview = preview_rect();
     if (top_page && page == PAGE_PLAY) {
       for (int track = 0; track < TRACKS; ++track)
         process_track_surface(track, surface_rect(track), track_has_surface(track));
@@ -429,8 +443,29 @@ struct mpe_test : panel_t {
 
   void draw_mode_button(int x, uint8_t target_page, const char *help_text) {
     uint32_t col = target_page >= PAGE_EDIT_B ? TEAL : PINK;
-    if (button(x, 15, page == target_page ? BRIGHTER(col) : DIMMEST(col), ISOLATED, help_text))
+    if (button(x, 15, page == target_page ? BRIGHTER(col) : DIMMEST(col), ISOLATED, help_text)) {
       page = page == target_page ? (uint8_t)PAGE_PLAY : target_page;
+      mod_source_ui.reset(); // every synth edit page opens on plain parameter editing
+    }
+  }
+
+  // ---- modulation sources ----
+  // On the synth edit pages the side buttons pick a modulation source (A, B, X, Y, pressure); the sliders and
+  // XY pad then edit that source's modulation depth instead of the parameter values.
+
+  bool is_synth_edit_page() const { return page == PAGE_EDIT_A || page == PAGE_EDIT_B; }
+
+  int mod_flags() const { return is_synth_edit_page() ? mod_source_ui.flags() : 0; }
+
+  void on_click(uint8_t button_mask) override {
+    mod_source_ui.on_click(button_mask, is_synth_edit_page());
+  }
+
+  // The playable preview on the synth pages; one row shorter while the LFO row is shown above it.
+  rect_t preview_rect() const {
+    if (mod_flags())
+      return rect_t{0, PREVIEW_Y + 1, PREVIEW_W, PREVIEW_H - 1};
+    return rect_t{0, PREVIEW_Y, PREVIEW_W, PREVIEW_H};
   }
 
   void draw_brightness_slider(int track, rect_t r) {
@@ -443,10 +478,16 @@ struct mpe_test : panel_t {
   }
 
   void draw_synth_page_controls(int track) {
-    rect_t preview = {0, PREVIEW_Y, PREVIEW_W, PREVIEW_H};
+    rect_t preview = preview_rect();
     draw_surface(track, preview, PREVIEW_POS_OFFSET);
-    draw_brightness_slider(track, rect_t{PREVIEW_W, PREVIEW_Y, 1, PREVIEW_H});
-    preset_pages.xy_pad(track, 8, 10);
+    int flags = mod_flags();
+    if (flags)
+      mod_source_ui.lfo_slider(MOD_LFO_X, MOD_LFO_Y, MOD_LFO_W);
+    else
+      draw_brightness_slider(track, rect_t{PREVIEW_W, PREVIEW_Y, 1, PREVIEW_H});
+    // Same as preset_pages.xy_pad(track, 8, 10), plus the modulation-source flags.
+    synth_xy_block(&preset_pages.the_xy_pad, track, 8, 10, 7, 5, WHITE, BLUE, false, 0, XY_BUTTONS_ON_RIGHT, false, false,
+                   flags);
   }
 
   // ---- settings pages ----
@@ -556,7 +597,7 @@ struct mpe_test : panel_t {
 
     if (page == PAGE_EDIT_A || page == PAGE_EDIT_B) {
       int track = page >= PAGE_EDIT_B;
-      preset_pages.edit(track, 0, 0, false);
+      preset_pages.edit(track, 0, 0, false, mod_flags());
       draw_synth_page_controls(track);
     } else if (page == PAGE_LOAD_A || page == PAGE_LOAD_B) {
       int track = page >= PAGE_EDIT_B;

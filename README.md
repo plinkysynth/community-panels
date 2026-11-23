@@ -28,7 +28,8 @@ to review your files and add them to the community collection.
    A fork is your own copy where you can add your files.
 3. **Add your panel to your fork.** Put the source file in
    `your_name/your_panel/your_panel.cpp`, following the layout below. You can
-   also add a README with instructions and a small square artwork image.
+   also add a README with instructions, a small square artwork image, and a set
+   of presets from your panel.
    You can upload files through GitHub's website or use Git locally; commit
    (save) the changes to your fork.
 4. **Open a pull request back here.** From your fork on GitHub, choose
@@ -65,20 +66,23 @@ author_slug/
     README.md        # optional, but recommended
     artwork.png      # optional; artwork.webp is also accepted
     manual.pdf       # optional PDF manual, up to 5 MiB
+    presets/         # optional SD card songs for this panel
+      00/
+        20.json
 ```
 
 Each author directory can contain one optional `README.md` and one or more panel
 directories. Each panel directory must contain exactly one `.cpp` file directly
 inside the directory, or a `pack.json` for a panel pack (see below). Do not put panel `.cpp` files at the repository root or
-directly inside an author directory, and do not use subdirectories inside a
-panel submission.
+directly inside an author directory. A panel submission can have subdirectories
+under its optional `presets/` folder.
 
 Inside each author directory:
 
 - `README.md`: optional author bio, shown on that author's community gallery
   page and on community panel covers in the Plinky web IDE.
 
-Inside each panel directory, the only other accepted files are:
+Inside each panel directory, the other accepted assets are:
 
 - `README.md`: optional panel-specific notes.
 - `artwork.png` or `artwork.webp`: optional square thumbnail artwork. We recommend
@@ -88,6 +92,9 @@ Inside each panel directory, the only other accepted files are:
   website and linked as **PDF manual** on the panel detail page and in the IDE
   library. You can also link to it from your panel README using
   `[PDF manual](manual.pdf)`. Use a static document without scripts or attachments.
+- `presets/`: optional songs saved on a Plinky running your panel. The panel
+  page links a **Download presets** ZIP with these songs and a `README.txt` with
+  installation instructions.
 
 The community panel ID comes from the author and panel directory names:
 `author_slug/panel_slug`. Directory slugs must be lowercase and contain only
@@ -100,6 +107,27 @@ Metadata for your panel goes in a block comment in the `.cpp` file. See
 The optional panel `README.md` is shown in the Plinky web IDE panel cover after
 someone opens the panel from the library. The public library listing uses the
 C++ metadata and artwork, not the README.
+
+### Include presets
+
+On your SD card, open `PLINKY/u_<class_name>/`, where `<class_name>` is the C++
+panel class or struct name. Copy the desired bank folders into `presets/`, using
+the songs' original filenames and bank names. For example, copy
+`PLINKY/u_my_panel/00/20.json` to `presets/00/20.json`. Include at least one song.
+
+Bank names can contain up to 16 letters, digits, spaces, periods, hyphens or
+underscores. Begin and end the name with a character other than a space or
+period. A bank can contain numbered song files `00.json` through `77.json`
+(octal). The ZIP skips `hues.bin` and `FOLDERHUES.BIN` if your copied folders
+contain them. Plinky reads slot colours from the song JSON, and the SD card
+keeps its existing bank colours. Leave personal settings, `lastsong.txt`, and
+other files on your own SD card. Use regular files and choose names that are
+distinct on the SD card, where case differences are ignored.
+
+The publishing build packages the songs under `PLINKY/u_<class_name>/` inside
+the ZIP. To also link it from your panel README, use
+`[Download presets](my_panel-presets.zip)` with your panel directory's slug.
+For panel packs, download each member's presets from its own panel page.
 
 ## Permalinks
 

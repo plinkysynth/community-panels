@@ -17,4 +17,15 @@ Use the right-up button to reach the settings:
 
 Settings, both sounds and the mix are saved with the song. Brightness is latched when a surface note starts. The unsplit surface still uses seven MPE member channels.
 
+[Download the MPE Surface presets](mpe_test-presets.zip) for horizontal and vertical versions of these layouts. The ZIP includes SD card installation instructions.
+
+1. Isomorphic fourths with major scale highlights
+2. Penta minor scale, stride in fifths
+3. Hirajōshi scale, stride in fifths
+4. Piano, octave stride with major scale highlights
+5. Chromatic, minor thirds
+6. Whole tone, minor thirds
+7. Chromatic on A, whole tone with major scale highlights
+8. Insen scale, whole tone
+
 Old MPE Test songs retain their sounds, but use the new surface defaults and reset brightness. There is no save-format migration.
