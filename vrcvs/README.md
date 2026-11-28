@@ -13,6 +13,9 @@ generative music and soundscapes.
 - **[N3VE](n3ve/)** — generative ambient, ported from my norns script NEVE:
   snow, tears and a live voice that answers your phrases. On the Chords
   faceplate.
+- **[DER1VA](der1va/)** — a polymetric 4-track sequencer freely inspired by
+  Kria: every parameter has its own loop and speed, with harmony, drift and
+  chance. On the Chords faceplate.
 
 ## Elsewhere
 
