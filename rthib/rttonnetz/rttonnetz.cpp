@@ -133,12 +133,12 @@ struct rttonnetz : panel_t {
                 // Determine the 3 neighboring notes
                 if ((x + (y-1)/2) % 2 == 0) {
                   if (y-1>=0) finger_onoff(x,y-1,pressure,true);
-                  if (x-1>=0) finger_onoff(x-1,y+1,pressure,true);
-                  finger_onoff(x+1,y+1,pressure,true);
+                  if (x-1>=0 && y+1<15) finger_onoff(x-1,y+1,pressure,true);
+                  if (x+1<16 && y+1<15) finger_onoff(x+1,y+1,pressure,true);
                 } else {
-                  if (y-1>=0) finger_onoff(x+1,y-1,pressure,true);
+                  if (x+1<16 && y-1>=0) finger_onoff(x+1,y-1,pressure,true);
                   if (x-1>=0 && y-1>=0) finger_onoff(x-1,y-1,pressure,true);
-                  finger_onoff(x,y+1,pressure,true);          
+                  if (y+1<15) finger_onoff(x,y+1,pressure,true);          
                 }
               }
             }
